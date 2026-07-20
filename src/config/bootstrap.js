@@ -161,6 +161,9 @@ async function bootstrap() {
             client.aliases.set(String(alias).toLowerCase(), commandName);
           }
         }
+
+        // Register interaction handlers from prefix commands
+        registerInteractionHandlers(client, command);
       }
     }
 

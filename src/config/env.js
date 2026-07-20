@@ -7,6 +7,8 @@ function loadEnv() {
   const clientId = process.env.DISCORD_CLIENT_ID;
   const guildId = process.env.DISCORD_GUILD_ID;
   const prefix = process.env.PREFIX || "!";
+  const ownerId = process.env.OWNER_ID || null;
+  const suggestionChannelId = process.env.SUGGESTION_CHANNEL_ID || null;
   const nodeEnv = String(process.env.NODE_ENV || "development").toLowerCase();
   const isProduction = nodeEnv === "production";
 
@@ -27,6 +29,8 @@ function loadEnv() {
     clientId,
     guildId,
     prefix,
+    ownerId,
+    suggestionChannelId,
     nodeEnv,
     isProduction
   };
