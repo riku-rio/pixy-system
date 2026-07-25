@@ -1,7 +1,6 @@
 const {
   ActionRowBuilder,
   StringSelectMenuBuilder,
-  RoleSelectMenuBuilder,
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
@@ -17,6 +16,7 @@ const { prisma } = require("../config/prisma");
 
 const TICKET_CATEGORY_ID = "1528706907404242955";
 const CLAIMER_ROLE_ID = "1528708288814776411";
+const ESCALATION_ROLE_ID = "1528735714878164992";
 const TICKET_LOG_CHANNEL = "1528712602157449286";
 const NOTIFICATIONS_CHANNEL_ID = "1528732283513733221";
 
@@ -213,39 +213,6 @@ module.exports = {
         await refreshControlPanel(interaction.channel, ticket);
       },
     },
-    {
-      customIdPrefix: "ticket_escalate_role:",
-      selectType: "role",
-      async execute(interaction) {
-        if (!isStaff(interaction)) return interaction.reply({ content: "Staff only.", flags: 64 });
-        const channelId = ticketId(interaction, "ticket_escalate_role:");
-        const ticket = await getTicket(channelId);
-        if (!ticket) return interaction.reply({ content: "Ticket state was not found.", flags: 64 });
-
-        const roleId = interaction.values[0];
-        if (roleId === interaction.guild.id) return interaction.reply({ content: "The @everyone role cannot be selected for escalation.", flags: 64 });
-
-        const role = await interaction.guild.roles.fetch(roleId).catch(() => null);
-        if (!role) return interaction.reply({ content: "The selected role no longer exists.", flags: 64 });
-
-        const modal = new ModalBuilder()
-          .setCustomId(`ticket_escalate_reason:${channelId}:${roleId}`)
-          .setTitle("Escalate Ticket")
-          .addComponents(
-            new ActionRowBuilder().addComponents(
-              new TextInputBuilder()
-                .setCustomId("reason")
-                .setLabel("Escalation reason")
-                .setPlaceholder(`Explain why this ticket needs ${role.name}`)
-                .setStyle(TextInputStyle.Paragraph)
-                .setMinLength(3)
-                .setMaxLength(1000)
-                .setRequired(true)
-            )
-          );
-        await interaction.showModal(modal);
-      },
-    },
   ],
 
   buttonHandlers: [
@@ -305,16 +272,22 @@ module.exports = {
         const ticket = await getTicket(channelId);
         if (!ticket) return interaction.reply({ content: "Ticket state was not found.", flags: 64 });
 
-        const roleMenu = new RoleSelectMenuBuilder()
-          .setCustomId(`ticket_escalate_role:${channelId}`)
-          .setPlaceholder("Choose the role to escalate this ticket to...")
-          .setMinValues(1)
-          .setMaxValues(1);
-        await interaction.reply({
-          content: "Choose the role that should handle this escalation:",
-          components: [new ActionRowBuilder().addComponents(roleMenu)],
-          flags: 64,
-        });
+        const modal = new ModalBuilder()
+          .setCustomId(`ticket_escalate_reason:${channelId}`)
+          .setTitle("Escalate Ticket")
+          .addComponents(
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId("reason")
+                .setLabel("Escalation reason")
+                .setPlaceholder("Explain why this ticket needs admin attention")
+                .setStyle(TextInputStyle.Paragraph)
+                .setMinLength(3)
+                .setMaxLength(1000)
+                .setRequired(true)
+            )
+          );
+        await interaction.showModal(modal);
       },
     },
     {
@@ -359,13 +332,14 @@ module.exports = {
       customIdPrefix: "ticket_escalate_reason:",
       async execute(interaction) {
         if (!isStaff(interaction)) return interaction.reply({ content: "Staff only.", flags: 64 });
-        const [channelId, roleId] = ticketId(interaction, "ticket_escalate_reason:").split(":");
+        const channelId = ticketId(interaction, "ticket_escalate_reason:");
+        const roleId = ESCALATION_ROLE_ID;
         const ticket = await getTicket(channelId);
         if (!ticket) return interaction.reply({ content: "Ticket state was not found.", flags: 64 });
         if (interaction.channel.id !== channelId) return interaction.reply({ content: "This escalation does not belong to the current ticket channel.", flags: 64 });
 
         const role = await interaction.guild.roles.fetch(roleId).catch(() => null);
-        if (!role || roleId === interaction.guild.id) return interaction.reply({ content: "The selected escalation role is no longer valid.", flags: 64 });
+        if (!role) return interaction.reply({ content: "The configured escalation role no longer exists.", flags: 64 });
 
         const reason = interaction.fields.getTextInputValue("reason").trim();
         if (!reason) return interaction.reply({ content: "An escalation reason is required.", flags: 64 });
