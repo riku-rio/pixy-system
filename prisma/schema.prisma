@@ -12,10 +12,8 @@ model GuildConfig {
   ticketCategoryId String?
   enabled          Boolean  @default(true)
   maxLearnedItems  Int      @default(20)
-
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
-
   learnedAnswers   LearnedAnswer[]
   ticketChannels   TicketChannel[]
 }
@@ -25,26 +23,29 @@ model LearnedAnswer {
   guildId   String
   question  String
   answer    String
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
   guild     GuildConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
-
   @@index([guildId])
 }
 
 model TicketChannel {
-  id        String   @id @default(cuid())
-  guildId   String
-  channelId String   @unique
-  userId    String?
-  closed    Boolean  @default(false)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  guild     GuildConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
-
+  id             String   @id @default(cuid())
+  guildId        String
+  channelId      String   @unique
+  userId         String
+  category       String   @default("general")
+  name           String
+  claimedBy      String?
+  priority       String   @default("medium")
+  locked         Boolean  @default(false)
+  escalated      Boolean  @default(false)
+  closed         Boolean  @default(false)
+  openedAt       DateTime @default(now())
+  closedAt       DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  guild          GuildConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
   @@index([guildId])
+  @@index([guildId, userId, closed])
 }
