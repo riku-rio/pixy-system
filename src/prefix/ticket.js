@@ -22,6 +22,7 @@ const TICKET_CATEGORIES = [
   { label: "General Support", description: "Get help with general questions", value: "general", emoji: "🛟" },
   { label: "Bug Report", description: "Report a bug or unexpected behaviour", value: "bug", emoji: "🐛" },
   { label: "Other", description: "Something that does not fit above", value: "other", emoji: "📋" },
+  { label: "Reset", description: "Reset the select menu", value: "reset", emoji: "🔄" },
 ];
 const PRIORITY_LABELS = {
   low: { label: "🟢 Low", color: 0x57f287 },
@@ -127,6 +128,9 @@ module.exports = {
     {
       customId: "ticket_open_select",
       async execute(interaction) {
+        if (interaction.values[0] === "reset") {
+          return interaction.reply({ content: "Select menu has been reset.", flags: 64 });
+        }
         await ensureGuild(interaction.guild.id);
         const existing = await prisma.ticketChannel.findFirst({
           where: { guildId: interaction.guild.id, userId: interaction.user.id, closed: false },
@@ -169,6 +173,9 @@ module.exports = {
       customIdPrefix: "ticket_priority_select:",
       async execute(interaction) {
         if (!isStaff(interaction)) return interaction.reply({ content: "Staff only.", flags: 64 });
+        if (interaction.values[0] === "reset") {
+          return interaction.update({ content: "Priority selection reset.", components: [] });
+        }
         const channelId = ticketId(interaction, "ticket_priority_select:");
         const ticket = await prisma.ticketChannel.update({ where: { channelId }, data: { priority: interaction.values[0] } });
         await interaction.update({ content: `Priority set to ${PRIORITY_LABELS[ticket.priority].label}.`, components: [] });
@@ -206,7 +213,10 @@ module.exports = {
       async execute(interaction) {
         if (!isStaff(interaction)) return interaction.reply({ content: "Staff only.", flags: 64 });
         const channelId = ticketId(interaction, "ticket_priority:");
-        const menu = new StringSelectMenuBuilder().setCustomId(`ticket_priority_select:${channelId}`).setPlaceholder("Choose priority...").addOptions(Object.entries(PRIORITY_LABELS).map(([value, data]) => ({ label: data.label, value })));
+        const menu = new StringSelectMenuBuilder().setCustomId(`ticket_priority_select:${channelId}`).setPlaceholder("Choose priority...").addOptions([
+          ...Object.entries(PRIORITY_LABELS).map(([value, data]) => ({ label: data.label, value })),
+          { label: "Reset", description: "Reset the select menu", value: "reset", emoji: "🔄" },
+        ]);
         await interaction.reply({ content: "Select a priority:", components: [new ActionRowBuilder().addComponents(menu)], flags: 64 });
       },
     },
