@@ -1,6 +1,7 @@
 const {
   ActionRowBuilder,
   StringSelectMenuBuilder,
+  RoleSelectMenuBuilder,
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
@@ -169,7 +170,6 @@ module.exports = {
         if (existing) return interaction.editReply({ content: `You already have an open ticket: <#${existing.channelId}>`, allowedMentions: { parse: [] } });
 
         const category = interaction.values[0];
-        const categoryData = TICKET_CATEGORIES.find((item) => item.value === category) || TICKET_CATEGORIES[0];
         const safeUser = interaction.user.username.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").slice(0, 40);
         const channel = await interaction.guild.channels.create({
           name: `${category}-${safeUser}-${Date.now().toString().slice(-6)}`,
@@ -201,6 +201,7 @@ module.exports = {
     },
     {
       customIdPrefix: "ticket_priority_select:",
+      selectType: "string",
       async execute(interaction) {
         if (!isStaff(interaction)) return interaction.reply({ content: "Staff only.", flags: 64 });
         if (interaction.values[0] === "reset") {
@@ -210,6 +211,39 @@ module.exports = {
         const ticket = await prisma.ticketChannel.update({ where: { channelId }, data: { priority: interaction.values[0] } });
         await interaction.update({ content: `Priority set to ${PRIORITY_LABELS[ticket.priority].label}.`, components: [] });
         await refreshControlPanel(interaction.channel, ticket);
+      },
+    },
+    {
+      customIdPrefix: "ticket_escalate_role:",
+      selectType: "role",
+      async execute(interaction) {
+        if (!isStaff(interaction)) return interaction.reply({ content: "Staff only.", flags: 64 });
+        const channelId = ticketId(interaction, "ticket_escalate_role:");
+        const ticket = await getTicket(channelId);
+        if (!ticket) return interaction.reply({ content: "Ticket state was not found.", flags: 64 });
+
+        const roleId = interaction.values[0];
+        if (roleId === interaction.guild.id) return interaction.reply({ content: "The @everyone role cannot be selected for escalation.", flags: 64 });
+
+        const role = await interaction.guild.roles.fetch(roleId).catch(() => null);
+        if (!role) return interaction.reply({ content: "The selected role no longer exists.", flags: 64 });
+
+        const modal = new ModalBuilder()
+          .setCustomId(`ticket_escalate_reason:${channelId}:${roleId}`)
+          .setTitle("Escalate Ticket")
+          .addComponents(
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId("reason")
+                .setLabel("Escalation reason")
+                .setPlaceholder(`Explain why this ticket needs ${role.name}`)
+                .setStyle(TextInputStyle.Paragraph)
+                .setMinLength(3)
+                .setMaxLength(1000)
+                .setRequired(true)
+            )
+          );
+        await interaction.showModal(modal);
       },
     },
   ],
@@ -268,11 +302,19 @@ module.exports = {
       async execute(interaction) {
         if (!isStaff(interaction)) return interaction.reply({ content: "Staff only.", flags: 64 });
         const channelId = ticketId(interaction, "ticket_escalate:");
-        const ticket = await prisma.ticketChannel.update({ where: { channelId }, data: { escalated: true, priority: "critical" } });
-        const notifications = await interaction.guild.channels.fetch(NOTIFICATIONS_CHANNEL_ID).catch(() => null);
-        if (notifications?.isTextBased()) await notifications.send({ content: `🚨 Escalated ticket: <#${channelId}> by <@${interaction.user.id}>`, allowedMentions: { users: [interaction.user.id] } });
-        await interaction.reply("Ticket escalated.");
-        await refreshControlPanel(interaction.channel, ticket);
+        const ticket = await getTicket(channelId);
+        if (!ticket) return interaction.reply({ content: "Ticket state was not found.", flags: 64 });
+
+        const roleMenu = new RoleSelectMenuBuilder()
+          .setCustomId(`ticket_escalate_role:${channelId}`)
+          .setPlaceholder("Choose the role to escalate this ticket to...")
+          .setMinValues(1)
+          .setMaxValues(1);
+        await interaction.reply({
+          content: "Choose the role that should handle this escalation:",
+          components: [new ActionRowBuilder().addComponents(roleMenu)],
+          flags: 64,
+        });
       },
     },
     {
@@ -313,6 +355,82 @@ module.exports = {
   ],
 
   modalHandlers: [
+    {
+      customIdPrefix: "ticket_escalate_reason:",
+      async execute(interaction) {
+        if (!isStaff(interaction)) return interaction.reply({ content: "Staff only.", flags: 64 });
+        const [channelId, roleId] = ticketId(interaction, "ticket_escalate_reason:").split(":");
+        const ticket = await getTicket(channelId);
+        if (!ticket) return interaction.reply({ content: "Ticket state was not found.", flags: 64 });
+        if (interaction.channel.id !== channelId) return interaction.reply({ content: "This escalation does not belong to the current ticket channel.", flags: 64 });
+
+        const role = await interaction.guild.roles.fetch(roleId).catch(() => null);
+        if (!role || roleId === interaction.guild.id) return interaction.reply({ content: "The selected escalation role is no longer valid.", flags: 64 });
+
+        const reason = interaction.fields.getTextInputValue("reason").trim();
+        if (!reason) return interaction.reply({ content: "An escalation reason is required.", flags: 64 });
+
+        await interaction.deferReply({ flags: 64 });
+        await interaction.channel.permissionOverwrites.edit(
+          roleId,
+          {
+            ViewChannel: true,
+            SendMessages: true,
+            ReadMessageHistory: true,
+            AttachFiles: true,
+            EmbedLinks: true,
+          },
+          { reason: `Ticket escalated to ${role.name} by ${interaction.user.tag}` }
+        );
+
+        const escalatedName = interaction.channel.name.startsWith("escalate-")
+          ? interaction.channel.name
+          : `escalate-${interaction.channel.name}`.slice(0, 100);
+        if (escalatedName !== interaction.channel.name) {
+          await interaction.channel.setName(escalatedName, `Ticket escalated by ${interaction.user.tag}`);
+        }
+
+        const updatedTicket = await prisma.ticketChannel.update({
+          where: { channelId },
+          data: { escalated: true, priority: "critical", name: escalatedName },
+        });
+        await refreshControlPanel(interaction.channel, updatedTicket);
+
+        const notificationEmbed = new EmbedBuilder()
+          .setTitle("🚨 Ticket Escalated")
+          .setColor(PRIORITY_LABELS.critical.color)
+          .setDescription(`A support ticket has been escalated to <@&${roleId}>.`)
+          .addFields(
+            { name: "Ticket", value: `<#${channelId}>`, inline: true },
+            { name: "Escalated to", value: `<@&${roleId}>`, inline: true },
+            { name: "Escalated by", value: `<@${interaction.user.id}>`, inline: true },
+            { name: "Reason", value: reason, inline: false }
+          )
+          .setTimestamp();
+
+        const notifications = await interaction.guild.channels.fetch(NOTIFICATIONS_CHANNEL_ID).catch(() => null);
+        if (!notifications?.isTextBased()) {
+          return interaction.editReply(`Ticket escalated to <@&${roleId}> and renamed to **${escalatedName}**, but the notifications channel is unavailable.`);
+        }
+
+        try {
+          await notifications.send({
+            content: `<@&${roleId}>`,
+            embeds: [notificationEmbed],
+            allowedMentions: { roles: [roleId] },
+          });
+          await interaction.editReply({
+            content: `Ticket escalated to <@&${roleId}>, renamed to **${escalatedName}**, and the notification was sent.`,
+            allowedMentions: { parse: [] },
+          });
+        } catch (error) {
+          await interaction.editReply({
+            content: `Ticket escalated to <@&${roleId}> and renamed to **${escalatedName}**, but the notification could not be sent.`,
+            allowedMentions: { parse: [] },
+          });
+        }
+      },
+    },
     {
       customIdPrefix: "ticket_adduser_modal:",
       async execute(interaction) {
