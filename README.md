@@ -46,12 +46,12 @@ DATABASE_URL="mysql://USER:PASSWORD@HOST:3306/DATABASE"
 Then deploy with:
 
 ```powershell
-npm install --omit=dev
-npx prisma generate
-npx prisma migrate deploy
+npm install
+npm run prisma:generate
+npm run prisma:migrate
 npm start
 ```
 
-Run `prisma migrate deploy`, not `prisma migrate dev`, in production.
+Run `prisma migrate deploy`, not `prisma migrate dev`, in production. Keep build-time dependencies available until Prisma Client generation and migration deployment finish.
 
-The migration history used for deployment is stored in `prisma/mysql-migrations`. The old SQLite migrations remain only as historical files and are not referenced by `prisma.config.ts`.
+The deployment migration history is stored in `prisma/mysql-migrations`. The old SQLite migrations remain only as historical files and are not referenced by `prisma.config.ts`.
