@@ -10,6 +10,7 @@ const {
   TextInputBuilder,
   TextInputStyle,
   AttachmentBuilder,
+  OverwriteType,
 } = require("discord.js");
 const { prisma } = require("../config/prisma");
 
@@ -46,6 +47,36 @@ async function getTicket(channelId) {
   return prisma.ticketChannel.findUnique({ where: { channelId } });
 }
 
+async function findActiveTicket(guild, userId) {
+  const tickets = await prisma.ticketChannel.findMany({
+    where: { guildId: guild.id, userId, closed: false },
+  });
+  let activeTicket = null;
+
+  for (const ticket of tickets) {
+    let channel = guild.channels.cache.get(ticket.channelId);
+    if (!channel) {
+      try {
+        channel = await guild.channels.fetch(ticket.channelId);
+      } catch (error) {
+        if (Number(error?.code) !== 10003) throw error;
+      }
+    }
+
+    if (channel) {
+      if (!activeTicket) activeTicket = ticket;
+      continue;
+    }
+
+    await prisma.ticketChannel.update({
+      where: { channelId: ticket.channelId },
+      data: { closed: true, closedAt: new Date() },
+    });
+  }
+
+  return activeTicket;
+}
+
 function buildControlPanel(ticket, guild) {
   const category = TICKET_CATEGORIES.find((item) => item.value === ticket.category) || { label: ticket.category, emoji: "🎫" };
   const priority = PRIORITY_LABELS[ticket.priority] || PRIORITY_LABELS.medium;
@@ -74,7 +105,8 @@ function buildButtons(ticket) {
       new ButtonBuilder().setCustomId(`ticket_priority:${ticket.channelId}`).setLabel("Set Priority").setEmoji("📊").setStyle(ButtonStyle.Secondary)
     ),
     new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`ticket_adduser:${ticket.channelId}`).setLabel("Add User").setEmoji("➕").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`ticket_adduser:${ticket.channelId}`).setLabel("Add User").setEmoji("👥").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`ticket_removeuser:${ticket.channelId}`).setLabel("Remove User").setEmoji("👋").setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId(`ticket_transcript:${ticket.channelId}`).setLabel("Save Transcript").setEmoji("📄").setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId(`ticket_lock:${ticket.channelId}`).setLabel(ticket.locked ? "Unlock" : "Lock").setEmoji("🔐").setStyle(ButtonStyle.Secondary)
     ),
@@ -131,13 +163,11 @@ module.exports = {
         if (interaction.values[0] === "reset") {
           return interaction.reply({ content: "Select menu has been reset.", flags: 64 });
         }
-        await ensureGuild(interaction.guild.id);
-        const existing = await prisma.ticketChannel.findFirst({
-          where: { guildId: interaction.guild.id, userId: interaction.user.id, closed: false },
-        });
-        if (existing) return interaction.reply({ content: `You already have an open ticket: <#${existing.channelId}>`, flags: 64, allowedMentions: { parse: [] } });
-
         await interaction.deferReply({ flags: 64 });
+        await ensureGuild(interaction.guild.id);
+        const existing = await findActiveTicket(interaction.guild, interaction.user.id);
+        if (existing) return interaction.editReply({ content: `You already have an open ticket: <#${existing.channelId}>`, allowedMentions: { parse: [] } });
+
         const category = interaction.values[0];
         const categoryData = TICKET_CATEGORIES.find((item) => item.value === category) || TICKET_CATEGORIES[0];
         const safeUser = interaction.user.username.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").slice(0, 40);
@@ -269,6 +299,17 @@ module.exports = {
         await interaction.showModal(modal);
       },
     },
+    {
+      customIdPrefix: "ticket_removeuser:",
+      async execute(interaction) {
+        if (!isStaff(interaction)) return interaction.reply({ content: "Staff only.", flags: 64 });
+        const channelId = ticketId(interaction, "ticket_removeuser:");
+        const modal = new ModalBuilder().setCustomId(`ticket_removeuser_modal:${channelId}`).setTitle("Remove User from Ticket").addComponents(
+          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("user_id").setLabel("Discord user ID").setStyle(TextInputStyle.Short).setRequired(true))
+        );
+        await interaction.showModal(modal);
+      },
+    },
   ],
 
   modalHandlers: [
@@ -280,6 +321,28 @@ module.exports = {
         if (!/^\d{17,20}$/.test(userId)) return interaction.reply({ content: "Enter a valid Discord user ID.", flags: 64 });
         await interaction.channel.permissionOverwrites.edit(userId, { ViewChannel: true, SendMessages: true, ReadMessageHistory: true }, { reason: `Added by ${interaction.user.tag}` });
         await interaction.reply({ content: `<@${userId}> was added to the ticket.`, allowedMentions: { users: [userId] } });
+      },
+    },
+    {
+      customIdPrefix: "ticket_removeuser_modal:",
+      async execute(interaction) {
+        if (!isStaff(interaction)) return interaction.reply({ content: "Staff only.", flags: 64 });
+        const channelId = ticketId(interaction, "ticket_removeuser_modal:");
+        const ticket = await getTicket(channelId);
+        if (!ticket) return interaction.reply({ content: "Ticket state was not found.", flags: 64 });
+
+        const userId = interaction.fields.getTextInputValue("user_id").trim();
+        if (!/^\d{17,20}$/.test(userId)) return interaction.reply({ content: "Enter a valid Discord user ID.", flags: 64 });
+        if (userId === ticket.userId) return interaction.reply({ content: "The ticket opener cannot be removed. Close the ticket instead.", flags: 64 });
+        if (userId === interaction.client.user.id) return interaction.reply({ content: "The bot cannot be removed from its own ticket.", flags: 64 });
+
+        const overwrite = interaction.channel.permissionOverwrites.cache.get(userId);
+        if (!overwrite || overwrite.type !== OverwriteType.Member) {
+          return interaction.reply({ content: "That user does not have a direct ticket permission override.", flags: 64 });
+        }
+
+        await interaction.channel.permissionOverwrites.delete(userId, `Removed from ticket by ${interaction.user.tag}`);
+        await interaction.reply({ content: `<@${userId}> was removed from the ticket.`, allowedMentions: { parse: [] } });
       },
     },
   ],
