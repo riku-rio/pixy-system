@@ -10,11 +10,13 @@ const {
   TextInputBuilder,
   TextInputStyle,
   AttachmentBuilder,
+  OverwriteType,
 } = require("discord.js");
 const { prisma } = require("../config/prisma");
 
 const TICKET_CATEGORY_ID = "1528706907404242955";
 const CLAIMER_ROLE_ID = "1528708288814776411";
+const ESCALATION_ROLE_ID = "1528735714878164992";
 const TICKET_LOG_CHANNEL = "1528712602157449286";
 const NOTIFICATIONS_CHANNEL_ID = "1528732283513733221";
 
@@ -46,6 +48,36 @@ async function getTicket(channelId) {
   return prisma.ticketChannel.findUnique({ where: { channelId } });
 }
 
+async function findActiveTicket(guild, userId) {
+  const tickets = await prisma.ticketChannel.findMany({
+    where: { guildId: guild.id, userId, closed: false },
+  });
+  let activeTicket = null;
+
+  for (const ticket of tickets) {
+    let channel = guild.channels.cache.get(ticket.channelId);
+    if (!channel) {
+      try {
+        channel = await guild.channels.fetch(ticket.channelId);
+      } catch (error) {
+        if (Number(error?.code) !== 10003) throw error;
+      }
+    }
+
+    if (channel) {
+      if (!activeTicket) activeTicket = ticket;
+      continue;
+    }
+
+    await prisma.ticketChannel.update({
+      where: { channelId: ticket.channelId },
+      data: { closed: true, closedAt: new Date() },
+    });
+  }
+
+  return activeTicket;
+}
+
 function buildControlPanel(ticket, guild) {
   const category = TICKET_CATEGORIES.find((item) => item.value === ticket.category) || { label: ticket.category, emoji: "🎫" };
   const priority = PRIORITY_LABELS[ticket.priority] || PRIORITY_LABELS.medium;
@@ -74,7 +106,8 @@ function buildButtons(ticket) {
       new ButtonBuilder().setCustomId(`ticket_priority:${ticket.channelId}`).setLabel("Set Priority").setEmoji("📊").setStyle(ButtonStyle.Secondary)
     ),
     new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`ticket_adduser:${ticket.channelId}`).setLabel("Add User").setEmoji("➕").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`ticket_adduser:${ticket.channelId}`).setLabel("Add User").setEmoji("👥").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`ticket_removeuser:${ticket.channelId}`).setLabel("Remove User").setEmoji("👋").setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId(`ticket_transcript:${ticket.channelId}`).setLabel("Save Transcript").setEmoji("📄").setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId(`ticket_lock:${ticket.channelId}`).setLabel(ticket.locked ? "Unlock" : "Lock").setEmoji("🔐").setStyle(ButtonStyle.Secondary)
     ),
@@ -131,15 +164,12 @@ module.exports = {
         if (interaction.values[0] === "reset") {
           return interaction.reply({ content: "Select menu has been reset.", flags: 64 });
         }
-        await ensureGuild(interaction.guild.id);
-        const existing = await prisma.ticketChannel.findFirst({
-          where: { guildId: interaction.guild.id, userId: interaction.user.id, closed: false },
-        });
-        if (existing) return interaction.reply({ content: `You already have an open ticket: <#${existing.channelId}>`, flags: 64, allowedMentions: { parse: [] } });
-
         await interaction.deferReply({ flags: 64 });
+        await ensureGuild(interaction.guild.id);
+        const existing = await findActiveTicket(interaction.guild, interaction.user.id);
+        if (existing) return interaction.editReply({ content: `You already have an open ticket: <#${existing.channelId}>`, allowedMentions: { parse: [] } });
+
         const category = interaction.values[0];
-        const categoryData = TICKET_CATEGORIES.find((item) => item.value === category) || TICKET_CATEGORIES[0];
         const safeUser = interaction.user.username.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").slice(0, 40);
         const channel = await interaction.guild.channels.create({
           name: `${category}-${safeUser}-${Date.now().toString().slice(-6)}`,
@@ -171,6 +201,7 @@ module.exports = {
     },
     {
       customIdPrefix: "ticket_priority_select:",
+      selectType: "string",
       async execute(interaction) {
         if (!isStaff(interaction)) return interaction.reply({ content: "Staff only.", flags: 64 });
         if (interaction.values[0] === "reset") {
@@ -238,11 +269,25 @@ module.exports = {
       async execute(interaction) {
         if (!isStaff(interaction)) return interaction.reply({ content: "Staff only.", flags: 64 });
         const channelId = ticketId(interaction, "ticket_escalate:");
-        const ticket = await prisma.ticketChannel.update({ where: { channelId }, data: { escalated: true, priority: "critical" } });
-        const notifications = await interaction.guild.channels.fetch(NOTIFICATIONS_CHANNEL_ID).catch(() => null);
-        if (notifications?.isTextBased()) await notifications.send({ content: `🚨 Escalated ticket: <#${channelId}> by <@${interaction.user.id}>`, allowedMentions: { users: [interaction.user.id] } });
-        await interaction.reply("Ticket escalated.");
-        await refreshControlPanel(interaction.channel, ticket);
+        const ticket = await getTicket(channelId);
+        if (!ticket) return interaction.reply({ content: "Ticket state was not found.", flags: 64 });
+
+        const modal = new ModalBuilder()
+          .setCustomId(`ticket_escalate_reason:${channelId}`)
+          .setTitle("Escalate Ticket")
+          .addComponents(
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId("reason")
+                .setLabel("Escalation reason")
+                .setPlaceholder("Explain why this ticket needs admin attention")
+                .setStyle(TextInputStyle.Paragraph)
+                .setMinLength(3)
+                .setMaxLength(1000)
+                .setRequired(true)
+            )
+          );
+        await interaction.showModal(modal);
       },
     },
     {
@@ -269,9 +314,97 @@ module.exports = {
         await interaction.showModal(modal);
       },
     },
+    {
+      customIdPrefix: "ticket_removeuser:",
+      async execute(interaction) {
+        if (!isStaff(interaction)) return interaction.reply({ content: "Staff only.", flags: 64 });
+        const channelId = ticketId(interaction, "ticket_removeuser:");
+        const modal = new ModalBuilder().setCustomId(`ticket_removeuser_modal:${channelId}`).setTitle("Remove User from Ticket").addComponents(
+          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("user_id").setLabel("Discord user ID").setStyle(TextInputStyle.Short).setRequired(true))
+        );
+        await interaction.showModal(modal);
+      },
+    },
   ],
 
   modalHandlers: [
+    {
+      customIdPrefix: "ticket_escalate_reason:",
+      async execute(interaction) {
+        if (!isStaff(interaction)) return interaction.reply({ content: "Staff only.", flags: 64 });
+        const channelId = ticketId(interaction, "ticket_escalate_reason:");
+        const roleId = ESCALATION_ROLE_ID;
+        const ticket = await getTicket(channelId);
+        if (!ticket) return interaction.reply({ content: "Ticket state was not found.", flags: 64 });
+        if (interaction.channel.id !== channelId) return interaction.reply({ content: "This escalation does not belong to the current ticket channel.", flags: 64 });
+
+        const role = await interaction.guild.roles.fetch(roleId).catch(() => null);
+        if (!role) return interaction.reply({ content: "The configured escalation role no longer exists.", flags: 64 });
+
+        const reason = interaction.fields.getTextInputValue("reason").trim();
+        if (!reason) return interaction.reply({ content: "An escalation reason is required.", flags: 64 });
+
+        await interaction.deferReply({ flags: 64 });
+        await interaction.channel.permissionOverwrites.edit(
+          roleId,
+          {
+            ViewChannel: true,
+            SendMessages: true,
+            ReadMessageHistory: true,
+            AttachFiles: true,
+            EmbedLinks: true,
+          },
+          { reason: `Ticket escalated to ${role.name} by ${interaction.user.tag}` }
+        );
+
+        const escalatedName = interaction.channel.name.startsWith("escalate-")
+          ? interaction.channel.name
+          : `escalate-${interaction.channel.name}`.slice(0, 100);
+        if (escalatedName !== interaction.channel.name) {
+          await interaction.channel.setName(escalatedName, `Ticket escalated by ${interaction.user.tag}`);
+        }
+
+        const updatedTicket = await prisma.ticketChannel.update({
+          where: { channelId },
+          data: { escalated: true, priority: "critical", name: escalatedName },
+        });
+        await refreshControlPanel(interaction.channel, updatedTicket);
+
+        const notificationEmbed = new EmbedBuilder()
+          .setTitle("🚨 Ticket Escalated")
+          .setColor(PRIORITY_LABELS.critical.color)
+          .setDescription(`A support ticket has been escalated to <@&${roleId}>.`)
+          .addFields(
+            { name: "Ticket", value: `<#${channelId}>`, inline: true },
+            { name: "Escalated to", value: `<@&${roleId}>`, inline: true },
+            { name: "Escalated by", value: `<@${interaction.user.id}>`, inline: true },
+            { name: "Reason", value: reason, inline: false }
+          )
+          .setTimestamp();
+
+        const notifications = await interaction.guild.channels.fetch(NOTIFICATIONS_CHANNEL_ID).catch(() => null);
+        if (!notifications?.isTextBased()) {
+          return interaction.editReply(`Ticket escalated to <@&${roleId}> and renamed to **${escalatedName}**, but the notifications channel is unavailable.`);
+        }
+
+        try {
+          await notifications.send({
+            content: `<@&${roleId}>`,
+            embeds: [notificationEmbed],
+            allowedMentions: { roles: [roleId] },
+          });
+          await interaction.editReply({
+            content: `Ticket escalated to <@&${roleId}>, renamed to **${escalatedName}**, and the notification was sent.`,
+            allowedMentions: { parse: [] },
+          });
+        } catch (error) {
+          await interaction.editReply({
+            content: `Ticket escalated to <@&${roleId}> and renamed to **${escalatedName}**, but the notification could not be sent.`,
+            allowedMentions: { parse: [] },
+          });
+        }
+      },
+    },
     {
       customIdPrefix: "ticket_adduser_modal:",
       async execute(interaction) {
@@ -280,6 +413,28 @@ module.exports = {
         if (!/^\d{17,20}$/.test(userId)) return interaction.reply({ content: "Enter a valid Discord user ID.", flags: 64 });
         await interaction.channel.permissionOverwrites.edit(userId, { ViewChannel: true, SendMessages: true, ReadMessageHistory: true }, { reason: `Added by ${interaction.user.tag}` });
         await interaction.reply({ content: `<@${userId}> was added to the ticket.`, allowedMentions: { users: [userId] } });
+      },
+    },
+    {
+      customIdPrefix: "ticket_removeuser_modal:",
+      async execute(interaction) {
+        if (!isStaff(interaction)) return interaction.reply({ content: "Staff only.", flags: 64 });
+        const channelId = ticketId(interaction, "ticket_removeuser_modal:");
+        const ticket = await getTicket(channelId);
+        if (!ticket) return interaction.reply({ content: "Ticket state was not found.", flags: 64 });
+
+        const userId = interaction.fields.getTextInputValue("user_id").trim();
+        if (!/^\d{17,20}$/.test(userId)) return interaction.reply({ content: "Enter a valid Discord user ID.", flags: 64 });
+        if (userId === ticket.userId) return interaction.reply({ content: "The ticket opener cannot be removed. Close the ticket instead.", flags: 64 });
+        if (userId === interaction.client.user.id) return interaction.reply({ content: "The bot cannot be removed from its own ticket.", flags: 64 });
+
+        const overwrite = interaction.channel.permissionOverwrites.cache.get(userId);
+        if (!overwrite || overwrite.type !== OverwriteType.Member) {
+          return interaction.reply({ content: "That user does not have a direct ticket permission override.", flags: 64 });
+        }
+
+        await interaction.channel.permissionOverwrites.delete(userId, `Removed from ticket by ${interaction.user.tag}`);
+        await interaction.reply({ content: `<@${userId}> was removed from the ticket.`, allowedMentions: { parse: [] } });
       },
     },
   ],
