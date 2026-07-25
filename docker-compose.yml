@@ -1,0 +1,21 @@
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: pixy_system
+      MYSQL_USER: pixy
+      MYSQL_PASSWORD: pixy_local_password
+      MYSQL_ROOT_PASSWORD: pixy_root_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - pixy_system_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-upixy", "-ppixy_local_password"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  pixy_system_mysql_data:
