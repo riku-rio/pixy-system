@@ -1,0 +1,57 @@
+# Pixy System
+
+Discord bot system using Discord.js, Prisma 7, and MySQL.
+
+## Requirements
+
+- Node.js 20 or newer
+- MySQL 8 or a compatible MariaDB service
+
+## Local setup
+
+Copy `.env.example` to `.env`, then start MySQL:
+
+```powershell
+npm run db:up
+```
+
+Install dependencies, generate Prisma Client, and apply migrations:
+
+```powershell
+npm install
+npm run prisma:generate
+npm run prisma:migrate
+```
+
+Start the bot:
+
+```powershell
+npm start
+```
+
+Stop the local database:
+
+```powershell
+npm run db:down
+```
+
+## Production deployment
+
+Set `DATABASE_URL` to a production MySQL connection string:
+
+```env
+DATABASE_URL="mysql://USER:PASSWORD@HOST:3306/DATABASE"
+```
+
+Then deploy with:
+
+```powershell
+npm install --omit=dev
+npx prisma generate
+npx prisma migrate deploy
+npm start
+```
+
+Run `prisma migrate deploy`, not `prisma migrate dev`, in production.
+
+The migration history used for deployment is stored in `prisma/mysql-migrations`. The old SQLite migrations remain only as historical files and are not referenced by `prisma.config.ts`.
