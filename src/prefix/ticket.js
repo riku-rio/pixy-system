@@ -81,7 +81,7 @@ async function findActiveTicket(guild, userId) {
 function buildControlPanel(ticket, guild) {
   const category = TICKET_CATEGORIES.find((item) => item.value === ticket.category) || { label: ticket.category, emoji: "🎫" };
   const openedAt = Math.floor(new Date(ticket.openedAt).getTime() / 1000);
-  const status = ticket.escalated ? "🚨 Escalated" : ticket.locked ? "🔐 Locked" : "🟢 Open";
+  const status = ticket.closed ? "🔒 Closed" : ticket.escalated ? "🚨 Escalated" : ticket.locked ? "🔐 Locked" : "🟢 Open";
 
   return new EmbedBuilder()
     .setAuthor({ name: "Ticket Control Panel", iconURL: guild.iconURL({ dynamic: true }) })
@@ -98,6 +98,8 @@ function buildControlPanel(ticket, guild) {
 }
 
 function buildButtons(ticket) {
+  if (ticket.closed) return [];
+
   return [
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`ticket_close:${ticket.channelId}`).setLabel("Close Ticket").setEmoji("🔒").setStyle(ButtonStyle.Danger),
@@ -134,6 +136,65 @@ async function saveTranscript(channel) {
   const logChannel = await channel.guild.channels.fetch(TICKET_LOG_CHANNEL).catch(() => null);
   if (!logChannel?.isTextBased()) throw new Error("Ticket log channel is unavailable.");
   await logChannel.send({ content: `Transcript for <#${channel.id}>`, files: [attachment], allowedMentions: { parse: [] } });
+}
+
+async function archiveTicketAfterTranscriptFailure(channel, ticket, closedBy) {
+  const archivedName = channel.name.startsWith("closed-")
+    ? channel.name
+    : `closed-${channel.name}`.slice(0, 100);
+
+  const archivedTicket = await prisma.ticketChannel.update({
+    where: { channelId: ticket.channelId },
+    data: {
+      closed: true,
+      locked: true,
+      closedAt: new Date(),
+      name: archivedName,
+    },
+  });
+
+  await channel.permissionOverwrites.set(
+    [
+      {
+        id: channel.guild.id,
+        deny: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages],
+      },
+      {
+        id: ADMIN_ROLE_ID,
+        allow: [
+          PermissionsBitField.Flags.ViewChannel,
+          PermissionsBitField.Flags.SendMessages,
+          PermissionsBitField.Flags.ReadMessageHistory,
+          PermissionsBitField.Flags.ManageMessages,
+          PermissionsBitField.Flags.AttachFiles,
+          PermissionsBitField.Flags.EmbedLinks,
+        ],
+      },
+      {
+        id: channel.client.user.id,
+        allow: [
+          PermissionsBitField.Flags.ViewChannel,
+          PermissionsBitField.Flags.SendMessages,
+          PermissionsBitField.Flags.ReadMessageHistory,
+          PermissionsBitField.Flags.ManageChannels,
+          PermissionsBitField.Flags.ManageMessages,
+          PermissionsBitField.Flags.AttachFiles,
+          PermissionsBitField.Flags.EmbedLinks,
+        ],
+      },
+    ],
+    `Ticket archived after transcript failure by ${closedBy.tag}`
+  );
+
+  if (archivedName !== channel.name) {
+    await channel.setName(archivedName, `Ticket archived after transcript failure by ${closedBy.tag}`);
+  }
+
+  await refreshControlPanel(channel, archivedTicket);
+  await channel.send({
+    content: `🔒 Ticket closed by <@${closedBy.id}>. Automatic transcript saving failed, so this channel was preserved as an admin-only archive.`,
+    allowedMentions: { users: [closedBy.id] },
+  });
 }
 
 function ticketId(interaction, prefix) {
@@ -217,10 +278,18 @@ module.exports = {
         try {
           await saveTranscript(interaction.channel);
         } catch (error) {
-          return interaction.editReply({
-            content: `The ticket was not closed because its transcript could not be saved: ${error.message || "Unknown transcript error."}`,
-            allowedMentions: { parse: [] },
-          });
+          try {
+            await archiveTicketAfterTranscriptFailure(interaction.channel, ticket, interaction.user);
+            return interaction.editReply({
+              content: `The transcript could not be saved, so the ticket was closed and preserved as an admin-only archive. You can open another ticket now. Error: ${error.message || "Unknown transcript error."}`,
+              allowedMentions: { parse: [] },
+            });
+          } catch (archiveError) {
+            return interaction.editReply({
+              content: `The transcript could not be saved. The ticket was marked closed so you can open another ticket, but the admin-only channel archive was not completed: ${archiveError.message || "Unknown archive error."}`,
+              allowedMentions: { parse: [] },
+            });
+          }
         }
 
         await prisma.ticketChannel.update({
