@@ -212,8 +212,22 @@ module.exports = {
         if (interaction.user.id !== ticket.userId && !isAdmin(interaction)) {
           return interaction.reply({ content: "Only the ticket opener, the admin role, or a server administrator can close this ticket.", flags: 64 });
         }
-        await interaction.reply({ content: "Closing ticket and saving its state...", flags: 64 });
-        await prisma.ticketChannel.update({ where: { channelId: ticket.channelId }, data: { closed: true, closedAt: new Date() } });
+
+        await interaction.deferReply({ flags: 64 });
+        try {
+          await saveTranscript(interaction.channel);
+        } catch (error) {
+          return interaction.editReply({
+            content: `The ticket was not closed because its transcript could not be saved: ${error.message || "Unknown transcript error."}`,
+            allowedMentions: { parse: [] },
+          });
+        }
+
+        await prisma.ticketChannel.update({
+          where: { channelId: ticket.channelId },
+          data: { closed: true, closedAt: new Date() },
+        });
+        await interaction.editReply("Transcript saved. Closing ticket...");
         await interaction.channel.delete(`Ticket closed by ${interaction.user.tag}`);
       },
     },
