@@ -17,6 +17,8 @@ module.exports = {
   guildOnlyMessage: "This command can only be used in a server.",
 
   async execute(message, args) {
+    await message.delete().catch(() => null);
+
     const embed = new EmbedBuilder()
       .setTitle("📝 Suggestion Box")
       .setDescription(
