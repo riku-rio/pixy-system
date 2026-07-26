@@ -37,8 +37,6 @@ model TicketChannel {
   userId    String      @db.VarChar(32)
   category  String      @default("general") @db.VarChar(32)
   name      String      @db.VarChar(100)
-  claimedBy String?     @db.VarChar(32)
-  priority  String      @default("medium") @db.VarChar(16)
   locked    Boolean     @default(false)
   escalated Boolean     @default(false)
   closed    Boolean     @default(false)
