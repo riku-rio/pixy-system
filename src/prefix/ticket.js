@@ -15,7 +15,7 @@ const {
 const { prisma } = require("../config/prisma");
 
 const TICKET_CATEGORY_ID = "1528706907404242955";
-const ESCALATION_ROLE_ID = "1528735714878164992";
+const ADMIN_ROLE_ID = "1528735714878164992";
 const TICKET_LOG_CHANNEL = "1528712602157449286";
 const NOTIFICATIONS_CHANNEL_ID = "1528732283513733221";
 const TICKET_COLOR = 0x5865f2;
@@ -29,7 +29,9 @@ const TICKET_CATEGORIES = [
 ];
 
 const isOwner = (message) => message.client.appEnv?.ownerId === message.author.id;
-const isAdministrator = (interaction) => interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator) === true;
+const isAdmin = (interaction) =>
+  interaction.member?.roles?.cache?.has(ADMIN_ROLE_ID) === true ||
+  interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator) === true;
 
 async function ensureGuild(guildId) {
   await prisma.guildConfig.upsert({
@@ -82,7 +84,7 @@ function buildControlPanel(ticket, guild) {
     .setAuthor({ name: "Ticket Control Panel", iconURL: guild.iconURL({ dynamic: true }) })
     .setTitle(`${category.emoji} ${ticket.name}`)
     .setColor(ticket.escalated ? ESCALATION_COLOR : TICKET_COLOR)
-    .setDescription("This ticket is private to its opener, server administrators, and the bot.")
+    .setDescription("This ticket is private to its opener, the configured admin role, server administrators, and the bot.")
     .addFields(
       { name: "Opened by", value: `<@${ticket.userId}>`, inline: true },
       { name: "Category", value: category.label, inline: true },
@@ -147,7 +149,7 @@ module.exports = {
     const embed = new EmbedBuilder()
       .setTitle("🎫 Open a Support Ticket")
       .setColor(TICKET_COLOR)
-      .setDescription("Choose the category that best fits your issue. The created channel is visible only to you, server administrators, and the bot.");
+      .setDescription("Choose the category that best fits your issue. The created channel is visible only to you, the admin role, server administrators, and the bot.");
     const menu = new StringSelectMenuBuilder()
       .setCustomId("ticket_open_select")
       .setPlaceholder("Select a ticket category...")
@@ -177,6 +179,7 @@ module.exports = {
           permissionOverwrites: [
             { id: interaction.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
             { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.AttachFiles, PermissionsBitField.Flags.EmbedLinks] },
+            { id: ADMIN_ROLE_ID, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.ManageMessages, PermissionsBitField.Flags.AttachFiles, PermissionsBitField.Flags.EmbedLinks] },
             { id: interaction.client.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.ManageChannels, PermissionsBitField.Flags.ManageMessages] },
           ],
           reason: `Support ticket opened by ${interaction.user.tag}`,
@@ -203,8 +206,8 @@ module.exports = {
       async execute(interaction) {
         const ticket = await getTicket(ticketId(interaction, "ticket_close:"));
         if (!ticket) return interaction.reply({ content: "Ticket state was not found.", flags: 64 });
-        if (interaction.user.id !== ticket.userId && !isAdministrator(interaction)) {
-          return interaction.reply({ content: "Only the ticket opener or an administrator can close this ticket.", flags: 64 });
+        if (interaction.user.id !== ticket.userId && !isAdmin(interaction)) {
+          return interaction.reply({ content: "Only the ticket opener, the admin role, or a server administrator can close this ticket.", flags: 64 });
         }
         await interaction.reply({ content: "Closing ticket and saving its state...", flags: 64 });
         await prisma.ticketChannel.update({ where: { channelId: ticket.channelId }, data: { closed: true, closedAt: new Date() } });
@@ -214,7 +217,7 @@ module.exports = {
     {
       customIdPrefix: "ticket_lock:",
       async execute(interaction) {
-        if (!isAdministrator(interaction)) return interaction.reply({ content: "Administrators only.", flags: 64 });
+        if (!isAdmin(interaction)) return interaction.reply({ content: "Admin role or higher only.", flags: 64 });
         const channelId = ticketId(interaction, "ticket_lock:");
         const current = await getTicket(channelId);
         if (!current) return interaction.reply({ content: "Ticket state was not found.", flags: 64 });
@@ -228,7 +231,7 @@ module.exports = {
     {
       customIdPrefix: "ticket_escalate:",
       async execute(interaction) {
-        if (!isAdministrator(interaction)) return interaction.reply({ content: "Administrators only.", flags: 64 });
+        if (!isAdmin(interaction)) return interaction.reply({ content: "Admin role or higher only.", flags: 64 });
         const channelId = ticketId(interaction, "ticket_escalate:");
         const ticket = await getTicket(channelId);
         if (!ticket) return interaction.reply({ content: "Ticket state was not found.", flags: 64 });
@@ -255,7 +258,7 @@ module.exports = {
     {
       customIdPrefix: "ticket_transcript:",
       async execute(interaction) {
-        if (!isAdministrator(interaction)) return interaction.reply({ content: "Administrators only.", flags: 64 });
+        if (!isAdmin(interaction)) return interaction.reply({ content: "Admin role or higher only.", flags: 64 });
         await interaction.deferReply({ flags: 64 });
         try {
           await saveTranscript(interaction.channel);
@@ -268,7 +271,7 @@ module.exports = {
     {
       customIdPrefix: "ticket_adduser:",
       async execute(interaction) {
-        if (!isAdministrator(interaction)) return interaction.reply({ content: "Administrators only.", flags: 64 });
+        if (!isAdmin(interaction)) return interaction.reply({ content: "Admin role or higher only.", flags: 64 });
         const channelId = ticketId(interaction, "ticket_adduser:");
         const modal = new ModalBuilder().setCustomId(`ticket_adduser_modal:${channelId}`).setTitle("Add User to Ticket").addComponents(
           new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("user_id").setLabel("Discord user ID").setStyle(TextInputStyle.Short).setRequired(true))
@@ -279,7 +282,7 @@ module.exports = {
     {
       customIdPrefix: "ticket_removeuser:",
       async execute(interaction) {
-        if (!isAdministrator(interaction)) return interaction.reply({ content: "Administrators only.", flags: 64 });
+        if (!isAdmin(interaction)) return interaction.reply({ content: "Admin role or higher only.", flags: 64 });
         const channelId = ticketId(interaction, "ticket_removeuser:");
         const modal = new ModalBuilder().setCustomId(`ticket_removeuser_modal:${channelId}`).setTitle("Remove User from Ticket").addComponents(
           new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("user_id").setLabel("Discord user ID").setStyle(TextInputStyle.Short).setRequired(true))
@@ -293,32 +296,21 @@ module.exports = {
     {
       customIdPrefix: "ticket_escalate_reason:",
       async execute(interaction) {
-        if (!isAdministrator(interaction)) return interaction.reply({ content: "Administrators only.", flags: 64 });
+        if (!isAdmin(interaction)) return interaction.reply({ content: "Admin role or higher only.", flags: 64 });
         const channelId = ticketId(interaction, "ticket_escalate_reason:");
-        const roleId = ESCALATION_ROLE_ID;
+        const roleId = ADMIN_ROLE_ID;
         const ticket = await getTicket(channelId);
         if (!ticket) return interaction.reply({ content: "Ticket state was not found.", flags: 64 });
         if (ticket.escalated) return interaction.reply({ content: "This ticket is already escalated.", flags: 64 });
         if (interaction.channel.id !== channelId) return interaction.reply({ content: "This escalation does not belong to the current ticket channel.", flags: 64 });
 
         const role = await interaction.guild.roles.fetch(roleId).catch(() => null);
-        if (!role) return interaction.reply({ content: "The configured escalation role no longer exists.", flags: 64 });
+        if (!role) return interaction.reply({ content: "The configured admin role no longer exists.", flags: 64 });
 
         const reason = interaction.fields.getTextInputValue("reason").trim();
         if (!reason) return interaction.reply({ content: "An escalation reason is required.", flags: 64 });
 
         await interaction.deferReply({ flags: 64 });
-        await interaction.channel.permissionOverwrites.edit(
-          roleId,
-          {
-            ViewChannel: true,
-            SendMessages: true,
-            ReadMessageHistory: true,
-            AttachFiles: true,
-            EmbedLinks: true,
-          },
-          { reason: `Ticket escalated to ${role.name} by ${interaction.user.tag}` }
-        );
 
         const escalatedName = interaction.channel.name.startsWith("escalate-")
           ? interaction.channel.name
@@ -336,10 +328,10 @@ module.exports = {
         const notificationEmbed = new EmbedBuilder()
           .setTitle("🚨 Ticket Escalated")
           .setColor(ESCALATION_COLOR)
-          .setDescription(`A support ticket has been escalated to <@&${roleId}>.`)
+          .setDescription(`A support ticket has been escalated for <@&${roleId}>.`)
           .addFields(
             { name: "Ticket", value: `<#${channelId}>`, inline: true },
-            { name: "Escalated to", value: `<@&${roleId}>`, inline: true },
+            { name: "Admin role", value: `<@&${roleId}>`, inline: true },
             { name: "Escalated by", value: `<@${interaction.user.id}>`, inline: true },
             { name: "Reason", value: reason, inline: false }
           )
@@ -347,7 +339,7 @@ module.exports = {
 
         const notifications = await interaction.guild.channels.fetch(NOTIFICATIONS_CHANNEL_ID).catch(() => null);
         if (!notifications?.isTextBased()) {
-          return interaction.editReply(`Ticket escalated to <@&${roleId}> and renamed to **${escalatedName}**, but the notifications channel is unavailable.`);
+          return interaction.editReply(`Ticket escalated for <@&${roleId}> and renamed to **${escalatedName}**, but the notifications channel is unavailable.`);
         }
 
         try {
@@ -357,12 +349,12 @@ module.exports = {
             allowedMentions: { roles: [roleId] },
           });
           await interaction.editReply({
-            content: `Ticket escalated to <@&${roleId}>, renamed to **${escalatedName}**, and the notification was sent.`,
+            content: `Ticket escalated for <@&${roleId}>, renamed to **${escalatedName}**, and the notification was sent.`,
             allowedMentions: { parse: [] },
           });
         } catch (error) {
           await interaction.editReply({
-            content: `Ticket escalated to <@&${roleId}> and renamed to **${escalatedName}**, but the notification could not be sent.`,
+            content: `Ticket escalated for <@&${roleId}> and renamed to **${escalatedName}**, but the notification could not be sent.`,
             allowedMentions: { parse: [] },
           });
         }
@@ -371,7 +363,7 @@ module.exports = {
     {
       customIdPrefix: "ticket_adduser_modal:",
       async execute(interaction) {
-        if (!isAdministrator(interaction)) return interaction.reply({ content: "Administrators only.", flags: 64 });
+        if (!isAdmin(interaction)) return interaction.reply({ content: "Admin role or higher only.", flags: 64 });
         const userId = interaction.fields.getTextInputValue("user_id").trim();
         if (!/^\d{17,20}$/.test(userId)) return interaction.reply({ content: "Enter a valid Discord user ID.", flags: 64 });
         await interaction.channel.permissionOverwrites.edit(userId, { ViewChannel: true, SendMessages: true, ReadMessageHistory: true }, { reason: `Added by ${interaction.user.tag}` });
@@ -381,7 +373,7 @@ module.exports = {
     {
       customIdPrefix: "ticket_removeuser_modal:",
       async execute(interaction) {
-        if (!isAdministrator(interaction)) return interaction.reply({ content: "Administrators only.", flags: 64 });
+        if (!isAdmin(interaction)) return interaction.reply({ content: "Admin role or higher only.", flags: 64 });
         const channelId = ticketId(interaction, "ticket_removeuser_modal:");
         const ticket = await getTicket(channelId);
         if (!ticket) return interaction.reply({ content: "Ticket state was not found.", flags: 64 });
