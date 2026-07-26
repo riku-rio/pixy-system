@@ -3,13 +3,13 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "mysql"
 }
 
 model GuildConfig {
-  id               String   @id @default(cuid())
-  guildId          String   @unique
-  ticketCategoryId String?
+  id               String   @id @default(cuid()) @db.VarChar(191)
+  guildId          String   @unique @db.VarChar(32)
+  ticketCategoryId String?  @db.VarChar(32)
   enabled          Boolean  @default(true)
   maxLearnedItems  Int      @default(20)
   createdAt        DateTime @default(now())
@@ -19,33 +19,33 @@ model GuildConfig {
 }
 
 model LearnedAnswer {
-  id        String   @id @default(cuid())
-  guildId   String
-  question  String
-  answer    String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id        String      @id @default(cuid()) @db.VarChar(191)
+  guildId   String      @db.VarChar(32)
+  question  String      @db.Text
+  answer    String      @db.Text
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
   guild     GuildConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+
   @@index([guildId])
 }
 
 model TicketChannel {
-  id             String   @id @default(cuid())
-  guildId        String
-  channelId      String   @unique
-  userId         String
-  category       String   @default("general")
-  name           String
-  claimedBy      String?
-  priority       String   @default("medium")
-  locked         Boolean  @default(false)
-  escalated      Boolean  @default(false)
-  closed         Boolean  @default(false)
-  openedAt       DateTime @default(now())
-  closedAt       DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  guild          GuildConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+  id        String      @id @default(cuid()) @db.VarChar(191)
+  guildId   String      @db.VarChar(32)
+  channelId String      @unique @db.VarChar(32)
+  userId    String      @db.VarChar(32)
+  category  String      @default("general") @db.VarChar(32)
+  name      String      @db.VarChar(100)
+  locked    Boolean     @default(false)
+  escalated Boolean     @default(false)
+  closed    Boolean     @default(false)
+  openedAt  DateTime    @default(now())
+  closedAt  DateTime?
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  guild     GuildConfig @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+
   @@index([guildId])
   @@index([guildId, userId, closed])
 }
