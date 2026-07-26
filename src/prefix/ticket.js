@@ -509,7 +509,7 @@ module.exports = {
 
         const overwrite = interaction.channel.permissionOverwrites.cache.get(userId);
         if (!overwrite || overwrite.type !== OverwriteType.Member) {
-          return interaction.reply({ content: "That user does not have a direct ticket permission override.", flags: 64 });
+          return interaction.reply({ content: "You can't remove this user.", flags: 64 });
         }
 
         await interaction.channel.permissionOverwrites.delete(userId, `Removed from ticket by ${interaction.user.tag}`);
