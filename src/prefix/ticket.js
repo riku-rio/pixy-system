@@ -29,8 +29,11 @@ const TICKET_CATEGORIES = [
 ];
 
 const isOwner = (message) => message.client.appEnv?.ownerId === message.author.id;
+const memberIsAdmin = (member) =>
+  member?.roles?.cache?.has(ADMIN_ROLE_ID) === true ||
+  member?.permissions?.has(PermissionsBitField.Flags.Administrator) === true;
 const isAdmin = (interaction) =>
-  interaction.member?.roles?.cache?.has(ADMIN_ROLE_ID) === true ||
+  memberIsAdmin(interaction.member) ||
   interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator) === true;
 
 async function ensureGuild(guildId) {
@@ -222,9 +225,24 @@ module.exports = {
         const current = await getTicket(channelId);
         if (!current) return interaction.reply({ content: "Ticket state was not found.", flags: 64 });
         const locked = !current.locked;
-        await interaction.channel.permissionOverwrites.edit(current.userId, { SendMessages: !locked }, { reason: `Ticket ${locked ? "locked" : "unlocked"} by ${interaction.user.tag}` });
+        const opener = await interaction.guild.members.fetch(current.userId).catch(() => null);
+        const openerCanManageTickets = memberIsAdmin(opener);
+
+        await Promise.all([
+          interaction.channel.permissionOverwrites.edit(
+            current.userId,
+            { SendMessages: locked ? openerCanManageTickets : true },
+            { reason: `Ticket ${locked ? "locked" : "unlocked"} by ${interaction.user.tag}` }
+          ),
+          interaction.channel.permissionOverwrites.edit(
+            ADMIN_ROLE_ID,
+            { SendMessages: true },
+            { reason: `Preserve admin replies while ticket is ${locked ? "locked" : "unlocked"}` }
+          ),
+        ]);
+
         const ticket = await prisma.ticketChannel.update({ where: { channelId }, data: { locked } });
-        await interaction.reply({ content: locked ? "Ticket locked." : "Ticket unlocked." });
+        await interaction.reply({ content: locked ? "Ticket locked. Admins can continue replying." : "Ticket unlocked." });
         await refreshControlPanel(interaction.channel, ticket);
       },
     },
@@ -364,10 +382,33 @@ module.exports = {
       customIdPrefix: "ticket_adduser_modal:",
       async execute(interaction) {
         if (!isAdmin(interaction)) return interaction.reply({ content: "Admin role or higher only.", flags: 64 });
+        const channelId = ticketId(interaction, "ticket_adduser_modal:");
+        const ticket = await getTicket(channelId);
+        if (!ticket) return interaction.reply({ content: "Ticket state was not found.", flags: 64 });
+        if (interaction.channel.id !== channelId) return interaction.reply({ content: "This user request does not belong to the current ticket channel.", flags: 64 });
+
         const userId = interaction.fields.getTextInputValue("user_id").trim();
         if (!/^\d{17,20}$/.test(userId)) return interaction.reply({ content: "Enter a valid Discord user ID.", flags: 64 });
-        await interaction.channel.permissionOverwrites.edit(userId, { ViewChannel: true, SendMessages: true, ReadMessageHistory: true }, { reason: `Added by ${interaction.user.tag}` });
-        await interaction.reply({ content: `<@${userId}> was added to the ticket.`, allowedMentions: { users: [userId] } });
+
+        const member = await interaction.guild.members.fetch(userId).catch(() => null);
+        if (!member) return interaction.reply({ content: "That user is not a member of this server.", flags: 64 });
+        if (member.user.bot) return interaction.reply({ content: "Bots cannot be added to tickets.", flags: 64 });
+
+        const alreadyHasAccess = interaction.channel.permissionsFor(member)?.has(PermissionsBitField.Flags.ViewChannel) === true;
+        if (alreadyHasAccess) return interaction.reply({ content: "That user already has access to this ticket.", flags: 64 });
+
+        await interaction.channel.permissionOverwrites.edit(
+          member.id,
+          {
+            ViewChannel: true,
+            SendMessages: true,
+            ReadMessageHistory: true,
+            AttachFiles: true,
+            EmbedLinks: true,
+          },
+          { reason: `Added by ${interaction.user.tag}` }
+        );
+        await interaction.reply({ content: `<@${member.id}> was added to the ticket.`, allowedMentions: { users: [member.id] } });
       },
     },
     {
