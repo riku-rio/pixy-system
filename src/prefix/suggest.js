@@ -151,7 +151,6 @@ module.exports = {
             await owner.send({ embeds: [suggestionEmbed] });
           }
         } catch (error) {
-          console.error("Could not send DM to bot owner:", error.message);
           // Fallback: try to send to a specific channel if configured
           if (interaction.client.appEnv?.suggestionChannelId) {
             try {
