@@ -12,8 +12,11 @@ Discord bot system using Discord.js, Prisma 7, and MySQL.
 Copy `.env.example` to `.env`, then start MySQL:
 
 ```powershell
+Copy-Item .env.example .env
 npm run db:up
 ```
+
+The Docker Compose service publishes MySQL on host port `3308` to avoid conflicts with `pixy-mvp`, which uses ports `3306` and `3307`. Inside the container, MySQL still listens on port `3306`.
 
 Install dependencies, generate Prisma Client, and apply migrations:
 
