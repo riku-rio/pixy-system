@@ -26,9 +26,7 @@ async function sendBugReport(interaction, embed) {
       const owner = await interaction.client.users.fetch(ownerId);
       await owner.send({ embeds: [embed] });
       return "dm";
-    } catch (error) {
-      console.error("Could not DM bug report to owner:", error.message);
-    }
+    } catch {}
   }
 
   try {
@@ -39,8 +37,7 @@ async function sendBugReport(interaction, embed) {
 
     await fallbackChannel.send({ embeds: [embed], allowedMentions: { parse: [] } });
     return "channel";
-  } catch (error) {
-    console.error("Could not send bug report to fallback channel:", error.message);
+  } catch {
     throw new Error("The bug report could not be delivered to the owner or fallback channel.");
   }
 }
