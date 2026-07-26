@@ -1,4 +1,4 @@
-const { Events, Collection } = require("discord.js");
+const { Events, Collection, PermissionsBitField } = require("discord.js");
 
 const DEFAULT_ERROR_MESSAGE = "There was an error trying to execute that command!";
 
@@ -74,6 +74,11 @@ function getCommandUsage(command, prefix) {
   return null;
 }
 
+function isBotOwner(message) {
+  const ownerId = message.client.appEnv?.ownerId;
+  return Boolean(ownerId && message.author.id === ownerId);
+}
+
 async function checkGuildOnly(message, command) {
   if (!command?.guildOnly) return true;
 
@@ -85,7 +90,25 @@ async function checkGuildOnly(message, command) {
   return true;
 }
 
+async function checkPrefixAccess(message) {
+  if (isBotOwner(message)) return true;
+
+  if (!message.guild || !message.member) {
+    await message.reply("Only the bot owner or a server administrator can use prefix commands.");
+    return false;
+  }
+
+  if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    await message.reply("Only the bot owner or a server administrator can use prefix commands.");
+    return false;
+  }
+
+  return true;
+}
+
 async function checkUserPermissions(message, command) {
+  if (isBotOwner(message)) return true;
+
   const permissions = toArray(command?.userPermissions);
 
   if (permissions.length === 0) return true;
@@ -191,6 +214,7 @@ async function runChecks(message, command, args, prefix) {
   }
 
   if (!(await checkGuildOnly(message, command))) return false;
+  if (!(await checkPrefixAccess(message))) return false;
   if (!(await checkUserPermissions(message, command))) return false;
   if (!(await checkBotPermissions(message, command))) return false;
   if (!(await checkArgs(message, command, args, prefix))) return false;
