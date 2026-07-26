@@ -48,7 +48,6 @@ module.exports = {
     await message.channel.send({ embeds: [embed], components: [row] });
   },
 
-  // Select menu handler
   selectMenuHandlers: [
     {
       customId: "suggest_select",
@@ -91,26 +90,22 @@ module.exports = {
     },
   ],
 
-  // Modal handler
   modalHandlers: [
     {
       customId: "suggest_modal",
       async execute(interaction) {
         const suggestion = interaction.fields.getTextInputValue("suggestion_input");
         const reason = interaction.fields.getTextInputValue("reason_input") || "No reason provided";
-
         const timestamp = Math.floor(Date.now() / 1000);
 
-        // Send confirmation to user
         const confirmationEmbed = new EmbedBuilder()
           .setTitle("✅ Suggestion Submitted!")
           .setDescription("Thank you for your feedback! Your suggestion has been sent to the bot developers.")
           .setColor(0x57f287)
           .setTimestamp();
 
-        await interaction.reply({ embeds: [confirmationEmbed], flags: 64 }); // Ephemeral
+        await interaction.reply({ embeds: [confirmationEmbed], flags: 64 });
 
-        // Create suggestion embed for DM
         const suggestionEmbed = new EmbedBuilder()
           .setTitle("📝 New Suggestion Received")
           .setColor(0xfee75c)
@@ -144,23 +139,19 @@ module.exports = {
           .setFooter({ text: `User ID: ${interaction.user.id}` })
           .setTimestamp();
 
-        // Try to DM the bot owner
         try {
           const owner = await interaction.client.users.fetch(interaction.client.appEnv?.ownerId || interaction.client.application?.owner?.id);
           if (owner) {
             await owner.send({ embeds: [suggestionEmbed] });
           }
-        } catch (error) {
-          // Fallback: try to send to a specific channel if configured
+        } catch {
           if (interaction.client.appEnv?.suggestionChannelId) {
             try {
               const channel = await interaction.client.channels.fetch(interaction.client.appEnv.suggestionChannelId);
               if (channel) {
                 await channel.send({ embeds: [suggestionEmbed] });
               }
-            } catch (channelError) {
-              console.error("Could not send to suggestion channel:", channelError.message);
-            }
+            } catch {}
           }
         }
       },
