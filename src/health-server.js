@@ -2,6 +2,7 @@ const http = require("node:http");
 
 function startHealthServer() {
   const port = Number(process.env.PORT || 3000);
+  const service = String(process.env.BOT_INSTANCE_NAME || "pixy-system").trim();
 
   const server = http.createServer((request, response) => {
     const pathname = new URL(
@@ -20,7 +21,7 @@ function startHealthServer() {
       response.end(
         JSON.stringify({
           status: "ok",
-          service: "pixy-system",
+          service,
           uptime: Math.floor(process.uptime()),
           timestamp: new Date().toISOString(),
         })
@@ -42,7 +43,7 @@ function startHealthServer() {
   });
 
   server.listen(port, "0.0.0.0", () => {
-    console.log(`Health server listening on port ${port}.`);
+    console.log(`Health server listening on port ${port} for ${service}.`);
   });
 
   return server;
