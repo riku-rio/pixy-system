@@ -49,3 +49,18 @@ model TicketChannel {
   @@index([guildId])
   @@index([guildId, userId, closed])
 }
+
+model BilingualAnnouncement {
+  id          String   @id @default(cuid()) @db.VarChar(191)
+  messageId   String?  @unique @db.VarChar(32)
+  guildId     String   @db.VarChar(32)
+  channelId   String   @db.VarChar(32)
+  createdBy   String   @db.VarChar(32)
+  title       String?  @db.VarChar(256)
+  footer      String?  @db.Text
+  englishText String   @db.Text
+  arabicText  String   @db.Text
+  createdAt   DateTime @default(now())
+
+  @@index([guildId, channelId])
+}
