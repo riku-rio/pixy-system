@@ -163,7 +163,6 @@ module.exports = {
         }
 
         await interaction.showModal(buildComposerModal(ownerId, channelId));
-        await interaction.message.delete().catch(() => null);
       },
     },
   ],
