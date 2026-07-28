@@ -4,42 +4,73 @@ Discord bot system using Discord.js, Prisma 7, and MySQL.
 
 ## Requirements
 
-- Node.js 20 or newer
+- Node.js 22 or 24
 - MySQL 8 or a compatible MariaDB service
+
+## One codebase, isolated environments
+
+Production and testing use the same repository and code. Each bot instance must have its own environment configuration, Discord application, Discord server resources, and database.
+
+Do not copy the production `.env` into testing without replacing every instance-specific value. A testing bot must not use the production token, client ID, guild ID, role IDs, channel IDs, or database URL.
 
 ## Environment variables
 
-Copy `.env.example` to `.env` and fill in the real values:
+Copy `.env.example` to `.env` and fill in the values for the current bot instance:
 
 ```env
-NODE_ENV=production
+# Runtime
+NODE_ENV=development
+BOT_INSTANCE_NAME=pixy-system-testing
+PORT=3000
+
+# Discord application and server
 DISCORD_TOKEN=
 DISCORD_CLIENT_ID=
 DISCORD_GUILD_ID=
 PREFIX=^
-
-# Suggestion System
-
 OWNER_ID=
+
+# Server-specific roles and channels
+ADMIN_ROLE_ID=
+TICKET_CATEGORY_ID=
+TICKET_LOG_CHANNEL_ID=
+TICKET_NOTIFICATIONS_CHANNEL_ID=
+BUG_FALLBACK_CHANNEL_ID=
 SUGGESTION_CHANNEL_ID=
 
-# Database - MySQL
-
-DATABASE_URL="mysql://pixy:pixy_local_password@127.0.0.1:3308/pixy_system"
+# Database
+DATABASE_URL="mysql://USER:PASSWORD@127.0.0.1:3308/DATABASE_NAME"
 ```
 
-Use `NODE_ENV=development` for local development and `NODE_ENV=production` for a deployed bot. The non-standard value `dev` is not recommended; use `development`.
+All Discord IDs are required and validated during startup. The bot stops immediately when a required value is missing or is not a valid Discord snowflake.
 
-## Local setup
+The configured resources are used as follows:
 
-Copy the environment template and start MySQL:
+- `DISCORD_GUILD_ID`: server where guild commands are synchronized
+- `OWNER_ID`: only user allowed to invoke prefix commands
+- `ADMIN_ROLE_ID`: role allowed to manage tickets, submit bug reports, and view private admin content
+- `TICKET_CATEGORY_ID`: parent category for newly created ticket channels
+- `TICKET_LOG_CHANNEL_ID`: destination for ticket transcripts
+- `TICKET_NOTIFICATIONS_CHANNEL_ID`: destination for escalation notifications
+- `BUG_FALLBACK_CHANNEL_ID`: fallback when the owner cannot receive a bug report by DM
+- `SUGGESTION_CHANNEL_ID`: fallback when the owner cannot receive a suggestion by DM
+- `BOT_INSTANCE_NAME`: identifies the instance in health responses and runtime logs
+
+## Local testing setup
+
+Create a dedicated Discord testing application and testing server, then create a dedicated local `.env`:
 
 ```powershell
 Copy-Item .env.example .env
+```
+
+Start MySQL:
+
+```powershell
 npm run db:up
 ```
 
-The Docker Compose service publishes MySQL on host port `3308` to avoid conflicts with `pixy-mvp`, which uses ports `3306` and `3307`. Inside the container, MySQL still listens on port `3306`.
+The Docker Compose service publishes MySQL on host port `3308`. Inside the container, MySQL listens on port `3306`.
 
 Install dependencies, generate Prisma Client, and apply migrations:
 
@@ -49,7 +80,7 @@ npm run prisma:generate
 npm run prisma:migrate
 ```
 
-Start the bot:
+Start the testing bot:
 
 ```powershell
 npm start
@@ -60,6 +91,29 @@ Stop the local database:
 ```powershell
 npm run db:down
 ```
+
+## Production deployment
+
+Create a separate Hostinger environment for the production bot and set the same environment keys with production-specific values. The production database must be separate from the testing database.
+
+Example production database URL:
+
+```env
+DATABASE_URL="mysql://USER:PASSWORD@localhost:3306/DATABASE_NAME"
+```
+
+Deploy with:
+
+```powershell
+npm install
+npm run prisma:generate
+npm run prisma:migrate
+npm start
+```
+
+Run `prisma migrate deploy`, not `prisma migrate dev`, in production. Keep build-time dependencies available until Prisma Client generation and migration deployment finish.
+
+The deployment migration history is stored in `prisma/mysql-migrations`. The old SQLite migrations remain only as historical files and are not referenced by `prisma.config.ts`.
 
 ## Clear all application data
 
@@ -85,27 +139,6 @@ Running the command without confirmation stops safely:
 ```powershell
 npm run db:clear
 ```
-
-## Production deployment
-
-Set `NODE_ENV=production` and provide a production MySQL connection string:
-
-```env
-DATABASE_URL="mysql://USER:PASSWORD@HOST:3306/DATABASE"
-```
-
-Then deploy with:
-
-```powershell
-npm install
-npm run prisma:generate
-npm run prisma:migrate
-npm start
-```
-
-Run `prisma migrate deploy`, not `prisma migrate dev`, in production. Keep build-time dependencies available until Prisma Client generation and migration deployment finish.
-
-The deployment migration history is stored in `prisma/mysql-migrations`. The old SQLite migrations remain only as historical files and are not referenced by `prisma.config.ts`.
 
 ## Useful npm commands
 
