@@ -1,4 +1,4 @@
-const { Events, Collection, PermissionsBitField } = require("discord.js");
+const { Events, Collection } = require("discord.js");
 
 const DEFAULT_ERROR_MESSAGE = "There was an error trying to execute that command!";
 
@@ -93,17 +93,8 @@ async function checkGuildOnly(message, command) {
 async function checkPrefixAccess(message) {
   if (isBotOwner(message)) return true;
 
-  if (!message.guild || !message.member) {
-    await message.reply("Only the bot owner or a server administrator can use prefix commands.");
-    return false;
-  }
-
-  if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-    await message.reply("Only the bot owner or a server administrator can use prefix commands.");
-    return false;
-  }
-
-  return true;
+  await message.reply("Only the bot owner can use prefix commands.");
+  return false;
 }
 
 async function checkUserPermissions(message, command) {
