@@ -2,6 +2,7 @@ const { Client, Collection, GatewayIntentBits, REST, Routes } = require("discord
 const fs = require("fs");
 const path = require("path");
 const { loadEnv } = require("./env");
+const { prisma } = require("./prisma");
 
 function getAllJsFiles(dirPath, arrayOfFiles = []) {
   const files = fs.readdirSync(dirPath);
@@ -73,7 +74,6 @@ function registerInteractionHandlers(client, command) {
     client.autocompleteHandlers.push(attachSource(handler, commandName));
   }
 
-  // Backward compatibility with your old componentHandlers system
   for (const handler of toArray(command.componentHandlers)) {
     const type = String(handler.type || "").toLowerCase();
     const preparedHandler = attachSource(handler, commandName);
@@ -114,6 +114,37 @@ async function syncCommands({ token, clientId, guildId }, commands, prefixCount)
   console.log(`Loaded ${prefixCount} prefix command(s).`);
 }
 
+function registerShutdownHandlers(client) {
+  let shuttingDown = false;
+
+  const shutdown = async (signal) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+
+    console.log(`Received ${signal}; shutting down cleanly.`);
+
+    const forceExitTimer = setTimeout(() => {
+      console.error("Graceful shutdown timed out; forcing exit.");
+      process.exit(1);
+    }, 25000);
+    forceExitTimer.unref();
+
+    try {
+      client.destroy();
+      await prisma.$disconnect();
+      clearTimeout(forceExitTimer);
+      process.exit(0);
+    } catch (error) {
+      console.error("Graceful shutdown failed:", error);
+      clearTimeout(forceExitTimer);
+      process.exit(1);
+    }
+  };
+
+  process.once("SIGINT", () => void shutdown("SIGINT"));
+  process.once("SIGTERM", () => void shutdown("SIGTERM"));
+}
+
 async function bootstrap() {
   try {
     const env = loadEnv();
@@ -126,6 +157,7 @@ async function bootstrap() {
       ],
     });
 
+    registerShutdownHandlers(client);
     client.appEnv = env;
 
     client.commands = new Collection();
@@ -162,7 +194,6 @@ async function bootstrap() {
           }
         }
 
-        // Register interaction handlers from prefix commands
         registerInteractionHandlers(client, command);
       }
     }
@@ -215,6 +246,11 @@ async function bootstrap() {
     await client.login(env.token);
   } catch (error) {
     console.error("Startup failed:", error);
+    try {
+      await prisma.$disconnect();
+    } catch (disconnectError) {
+      console.error("Failed to disconnect Prisma after startup failure:", disconnectError);
+    }
     process.exit(1);
   }
 }
