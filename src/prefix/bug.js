@@ -8,29 +8,26 @@ const {
   PermissionsBitField,
 } = require("discord.js");
 
-const ADMIN_ROLE_ID = "1528735714878164992";
-const BUG_FALLBACK_CHANNEL_ID = "1530972316203356301";
-
 function isAdmin(interaction) {
+  const adminRoleId = interaction.client.appEnv.adminRoleId;
   return (
-    interaction.member?.roles?.cache?.has(ADMIN_ROLE_ID) === true ||
+    interaction.member?.roles?.cache?.has(adminRoleId) === true ||
     interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator) === true
   );
 }
 
 async function sendBugReport(interaction, embed) {
-  const ownerId = interaction.client.appEnv?.ownerId;
-
-  if (ownerId) {
-    try {
-      const owner = await interaction.client.users.fetch(ownerId);
-      await owner.send({ embeds: [embed] });
-      return "dm";
-    } catch {}
-  }
+  const ownerId = interaction.client.appEnv.ownerId;
+  const fallbackChannelId = interaction.client.appEnv.bugFallbackChannelId;
 
   try {
-    const fallbackChannel = await interaction.client.channels.fetch(BUG_FALLBACK_CHANNEL_ID);
+    const owner = await interaction.client.users.fetch(ownerId);
+    await owner.send({ embeds: [embed] });
+    return "dm";
+  } catch {}
+
+  try {
+    const fallbackChannel = await interaction.client.channels.fetch(fallbackChannelId);
     if (!fallbackChannel?.isTextBased()) {
       throw new Error("Configured fallback channel is not text-based.");
     }
@@ -55,7 +52,7 @@ module.exports = {
       .setTitle("🐛 Report a Bug")
       .setDescription(
         "Use the select menu below to report a bot or server issue.\n" +
-        "Only members with the Admin role or Discord Administrator permission can submit reports."
+        "Only members with the configured Admin role or Discord Administrator permission can submit reports."
       )
       .setColor(0xed4245)
       .setFooter({ text: "Please include clear reproduction steps." })
@@ -91,7 +88,10 @@ module.exports = {
       customId: "bug_select",
       async execute(interaction) {
         if (!isAdmin(interaction)) {
-          return interaction.reply({ content: "Only the Admin role or higher can submit bug reports.", flags: 64 });
+          return interaction.reply({
+            content: "Only the configured Admin role or a server administrator can submit bug reports.",
+            flags: 64,
+          });
         }
 
         if (interaction.values[0] === "reset") {
@@ -162,7 +162,10 @@ module.exports = {
       customId: "bug_modal",
       async execute(interaction) {
         if (!isAdmin(interaction)) {
-          return interaction.reply({ content: "Only the Admin role or higher can submit bug reports.", flags: 64 });
+          return interaction.reply({
+            content: "Only the configured Admin role or a server administrator can submit bug reports.",
+            flags: 64,
+          });
         }
 
         const title = interaction.fields.getTextInputValue("bug_title").trim();
