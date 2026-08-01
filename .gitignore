@@ -1,7 +1,9 @@
 node_modules/
-package-lock.json
 .env
+.env.docker
 
 /src/generated/prisma
 *.db
 *.db-journal
+
+deploy/vps/secrets/
