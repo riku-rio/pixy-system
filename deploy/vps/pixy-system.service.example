@@ -1,0 +1,38 @@
+[Unit]
+Description=Pixy System Discord bot
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=pixy-system
+Group=pixy-system
+WorkingDirectory=/opt/pixy-system/current
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/pixy-system/pixy-system.env
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+UMask=0077
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pixy-system
+
+[Install]
+WantedBy=multi-user.target
