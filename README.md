@@ -1,14 +1,14 @@
 # Pixy System
 
-Discord bot built with Discord.js, Prisma 7, and MariaDB (MySQL-compatible).
+Discord bot built with Discord.js, Prisma 7, and MySQL/MariaDB.
 
 ## Features
 
 - **Ticket system** — Users open private support tickets with categories (General Support, Bug Report, Other). Tickets include control panels for closing, locking, escalating, adding/removing users, and saving transcripts.
-- **Suggestion system** — Administrators can submit suggestions via a modal; submissions are forwarded to the bot owner or a configured suggestion channel.
-- **Bug reporting** — Admin-role members can file structured bug reports (title, description, reproduction steps, expected result) sent to the bot owner or a fallback channel.
-- **Bilingual announcements** — The bot owner can compose English/Arabic announcements that are published to a chosen channel with a language toggle button.
-- **Admin rules** — A bilingual (English/Arabic) admin rules reference with role-based access.
+- **Suggestion system** — Administrators can submit suggestions through a modal; submissions are forwarded to the bot owner or a configured suggestion channel.
+- **Bug reporting** — Admin-role members can file structured bug reports sent to the bot owner or a fallback channel.
+- **Bilingual announcements** — The bot owner can publish English/Arabic announcements with a language toggle.
+- **Admin rules** — A bilingual English/Arabic admin-rules reference with role-based access.
 - **Learned answers** — Guild-level Q&A pairs the bot can learn and reference.
 
 ## Requirements
@@ -18,20 +18,17 @@ Discord bot built with Discord.js, Prisma 7, and MariaDB (MySQL-compatible).
 
 ## Environment variables
 
-Copy `.env.example` to `.env` and fill in the real values:
+Copy `.env.example` to `.env` for local use and fill in the real values. Production uses a protected environment file outside the repository.
 
 ```env
 NODE_ENV=production
-
-# Discord
+BOT_INSTANCE_NAME=pixy-system
 
 DISCORD_TOKEN=
 DISCORD_CLIENT_ID=
 DISCORD_GUILD_ID=
 PREFIX=!
 OWNER_ID=
-
-# IDs
 
 ADMIN_ROLE_ID=
 TICKET_CATEGORY_ID=
@@ -40,42 +37,50 @@ TICKET_NOTIFICATIONS_CHANNEL_ID=
 BUG_FALLBACK_CHANNEL_ID=
 SUGGESTION_CHANNEL_ID=
 
-# Database - MariaDB / MySQL
-
-DATABASE_URL="mysql://<USERNAME>:<PASSWORD>@127.0.0.1:3308/<DATABASE_NAME>"
+DATABASE_URL="mysql://pixy_system_app:STRONG_PASSWORD@127.0.0.1:3306/pixy_system?connection_limit=5"
 ```
 
-Use `NODE_ENV=development` for local development and `NODE_ENV=production` for a deployed bot. The non-standard value `dev` is not recommended; use `development`.
+Use a dedicated database and user for this application. Never use the MySQL root account in `DATABASE_URL`.
 
 ## Project structure
 
-```
+```text
 src/
   config/       Bootstrap, environment loader, Prisma client setup
-  events/       Discord event handlers (ready, messageCreate, interactionCreate)
-  prefix/       Prefix-command handlers (ticket, suggest, bug, admin-rules, enar)
+  events/       Discord event handlers
+  prefix/       Prefix-command handlers
 prisma/
-  schema.prisma            Prisma schema
-  migrations/              SQLite migration history (legacy)
-  mysql-migrations/        MySQL/MariaDB migration history (active)
+  schema.prisma
+  mysql-migrations/
 scripts/
-  clear-database.js        Destructive database-clear utility
+  clear-database.js
+deploy/vps/
+  compose.yml                       Shared production MySQL instance
+  Initialize-SharedMySql.ps1        Database/user initializer
+  Invoke-DatabaseMigration.ps1      Protected migration helper
+  Backup-SharedMySql.ps1            Logical backup helper
+  pixy-system.service.example       systemd service template
 ```
 
-## Local setup
+## Local development
 
-Copy the environment template and start MySQL:
+The root `docker-compose.yml` is intentionally development-only. It binds MySQL to localhost and reads credentials from the ignored `.env.docker` file.
 
 ```powershell
 Copy-Item .env.example .env
-npm run db:up
+Copy-Item .env.docker.example .env.docker
 ```
 
-The Docker Compose service publishes MySQL on host port `3308` to avoid conflicts with `pixy-mvp`, which uses ports `3306` and `3307`. Inside the container, MySQL still listens on port `3306`.
+Replace the placeholder values in both files. The local database is published on `127.0.0.1:3308`, so use a matching local connection string:
 
-Install dependencies, generate Prisma Client, and apply migrations:
+```env
+DATABASE_URL="mysql://pixy_system:YOUR_DEVELOPMENT_PASSWORD@127.0.0.1:3308/pixy_system"
+```
+
+Start MySQL, install dependencies, generate Prisma Client, and apply migrations:
 
 ```powershell
+npm run db:up
 npm install
 npm run prisma:generate
 npm run prisma:migrate
@@ -87,68 +92,66 @@ Start the bot:
 npm start
 ```
 
-Stop the local database:
+View or stop the local database:
 
 ```powershell
+npm run db:logs
 npm run db:down
 ```
 
+## Production VPS deployment
+
+Production should not use the root development Compose file or its passwords. The recommended layout is:
+
+```text
+VPS
+├── pixy-system Node.js service
+├── pixy Node.js service
+└── one MySQL 8 instance
+    ├── pixy_system database + dedicated user
+    └── pixy database + dedicated user
+```
+
+The production MySQL compose stack binds port 3306 only to `127.0.0.1`, stores its root password through a Compose secret, and gives this bot a least-privilege database account. The bot is supervised by systemd and shuts down Discord/Prisma cleanly on `SIGTERM`.
+
+Follow [docs/PRODUCTION_VPS.md](docs/PRODUCTION_VPS.md) for the complete PowerShell deployment, migration, update, and backup procedure.
+
 ## Clear all application data
 
-Use the destructive database-clear command when preparing a fresh development server, replacing a test bot, resetting a deployment, or starting with an empty application database:
+Use the destructive database-clear command when preparing a fresh development server or intentionally resetting a deployment:
 
 ```powershell
 npm run db:clear -- --confirm
 ```
 
-The required `--confirm` flag prevents accidental execution. The command:
+The command deletes rows from application tables, handles foreign keys, resets auto-increment counters, and preserves the schema and Prisma migration history. Stop the bot before running it. This operation cannot be undone without a backup.
 
-- Deletes rows from every application table discovered in the current database
-- Handles foreign-key relationships safely
-- Resets auto-increment counters where applicable
-- Preserves the database schema
-- Preserves Prisma's `_prisma_migrations` table and migration history
-- Automatically includes application tables added by future Prisma models
-
-This operation is destructive and cannot be undone without a backup. Stop the bot before clearing the database so it cannot write new records during the reset.
-
-Running the command without confirmation stops safely:
+Running it without confirmation stops safely:
 
 ```powershell
 npm run db:clear
 ```
 
-## Production deployment
+## Production migration commands
 
-Set `NODE_ENV=production` and provide a production MariaDB/MySQL connection string:
-
-```env
-DATABASE_URL="mysql://<USERNAME>:<PASSWORD>@<HOST>:3306/<DATABASE_NAME>"
-```
-
-Then deploy with:
+Generate Prisma Client and deploy committed migrations:
 
 ```powershell
-npm install
 npm run prisma:generate
 npm run prisma:migrate
-npm start
 ```
 
-Run `prisma migrate deploy`, not `prisma migrate dev`, in production. Keep build-time dependencies available until Prisma Client generation and migration deployment finish.
-
-The deployment migration history is stored in `prisma/mysql-migrations`. The old SQLite migrations remain only as historical files and are not referenced by `prisma.config.ts`.
+Use `prisma migrate deploy` through `npm run prisma:migrate` in production. Use `npm run prisma:migrate:dev` only while developing schema changes locally.
 
 ## Useful npm commands
 
 ```powershell
 npm start
 npm run db:up
+npm run db:logs
 npm run db:down
 npm run db:clear -- --confirm
 npm run prisma:generate
 npm run prisma:migrate
 npm run prisma:migrate:dev
 ```
-
-Use `npm run prisma:migrate:dev` only during local schema development. Use `npm run prisma:migrate` for deployed environments.
