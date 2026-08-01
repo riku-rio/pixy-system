@@ -6,13 +6,13 @@ const {
   PermissionsBitField,
 } = require("discord.js");
 
-const ADMIN_ROLE_ID = "1528735714878164992";
 const RULES_COLOR = 0x5865f2;
 
 function canViewAdminRules(interaction) {
+  const adminRoleId = interaction.client.appEnv.adminRoleId;
   return (
-    interaction.user.id === interaction.client.appEnv?.ownerId ||
-    interaction.member?.roles?.cache?.has(ADMIN_ROLE_ID) === true ||
+    interaction.user.id === interaction.client.appEnv.ownerId ||
+    interaction.member?.roles?.cache?.has(adminRoleId) === true ||
     interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator) === true
   );
 }
@@ -68,7 +68,7 @@ function buildEnglishRulesEmbed(guild) {
       {
         name: "💬 Admin Communication",
         value:
-          "• Use `#admins-chat` for internal discussion and `#bugs` for confirmed code issues.\n" +
+          "• Use the configured admin discussion and bug-reporting channels for internal work.\n" +
           "• Notify the team before major changes.\n" +
           "• Ask before acting when uncertain.\n" +
           "• Include enough detail for another admin to continue the case.\n" +
@@ -138,7 +138,7 @@ function buildArabicRulesEmbed(guild) {
       {
         name: "💬 التواصل بين الإداريين",
         value:
-          "• استخدم `#admins-chat` للنقاشات الداخلية و`#bugs` للأخطاء البرمجية المؤكدة.\n" +
+          "• استخدم قنوات الإدارة والأخطاء المحددة في السيرفر للعمل الداخلي.\n" +
           "• أبلغ الفريق قبل أي تغيير كبير.\n" +
           "• اسأل قبل التنفيذ عندما تكون غير متأكد.\n" +
           "• اكتب تفاصيل كافية ليتمكن إداري آخر من متابعة الحالة.\n" +
@@ -185,7 +185,7 @@ module.exports = {
       async execute(interaction) {
         if (!canViewAdminRules(interaction)) {
           return interaction.reply({
-            content: "Only the bot owner, Admin role, or a server administrator can view these rules.",
+            content: "Only the bot owner, configured Admin role, or a server administrator can view these rules.",
             flags: 64,
           });
         }
