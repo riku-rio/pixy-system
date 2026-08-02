@@ -5,8 +5,8 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "db:up": "docker compose up -d mysql",
-    "db:down": "docker compose down",
+    "db:up": "docker compose --env-file .env.docker up -d mysql",
+    "db:down": "docker compose --env-file .env.docker down",
     "db:clear": "node scripts/clear-database.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
