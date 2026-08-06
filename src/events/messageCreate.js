@@ -90,13 +90,6 @@ async function checkGuildOnly(message, command) {
   return true;
 }
 
-async function checkPrefixAccess(message) {
-  if (isBotOwner(message)) return true;
-
-  await message.reply("Only the bot owner can use prefix commands.");
-  return false;
-}
-
 async function checkUserPermissions(message, command) {
   if (isBotOwner(message)) return true;
 
@@ -205,7 +198,6 @@ async function runChecks(message, command, args, prefix) {
   }
 
   if (!(await checkGuildOnly(message, command))) return false;
-  if (!(await checkPrefixAccess(message))) return false;
   if (!(await checkUserPermissions(message, command))) return false;
   if (!(await checkBotPermissions(message, command))) return false;
   if (!(await checkArgs(message, command, args, prefix))) return false;
@@ -245,6 +237,7 @@ module.exports = {
       message.client.prefixCommands.get(message.client.aliases.get(commandName));
 
     if (!command) return;
+    if (!isBotOwner(message)) return;
 
     try {
       const allowed = await runChecks(message, command, args, prefixData.rawPrefix);
