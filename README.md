@@ -5,9 +5,9 @@ Discord bot built with Discord.js, Prisma 7, and MariaDB (MySQL-compatible).
 ## Features
 
 - **Ticket system** — Users open private support tickets with categories (General Support, Bug Report, Other). Tickets include control panels for closing, locking, escalating, adding/removing users, and saving transcripts.
-- **Suggestion system** — Administrators can submit suggestions via a modal; submissions are forwarded to the bot owner or a configured suggestion channel.
-- **Bug reporting** — Admin-role members can file structured bug reports (title, description, reproduction steps, expected result) sent to the bot owner or a fallback channel.
-- **Bilingual announcements** — The bot owner can compose English/Arabic announcements that are published to a chosen channel with a language toggle button.
+- **Suggestion system** — Administrators can submit suggestions via a modal; submissions are forwarded to the configured bot owners or a suggestion channel.
+- **Bug reporting** — Admin-role members can file structured bug reports (title, description, reproduction steps, expected result) sent to the configured bot owners or a fallback channel.
+- **Bilingual announcements** — Configured bot owners can compose English/Arabic announcements that are published to a chosen channel with a language toggle button.
 - **Admin rules** — A bilingual (English/Arabic) admin rules reference with role-based access.
 - **Learned answers** — Guild-level Q&A pairs the bot can learn and reference.
 
@@ -29,7 +29,7 @@ DISCORD_TOKEN=
 DISCORD_CLIENT_ID=
 DISCORD_GUILD_ID=
 PREFIX=!
-OWNER_ID=
+OWNERS=123456789012345678,987654321098765432
 
 # IDs
 
@@ -44,6 +44,8 @@ SUGGESTION_CHANNEL_ID=
 
 DATABASE_URL="mysql://<USERNAME>:<PASSWORD>@127.0.0.1:3308/<DATABASE_NAME>"
 ```
+
+`OWNERS` accepts one or more Discord user IDs separated by commas. Every configured ID is treated equally as an owner; the first ID has no special status.
 
 Use `NODE_ENV=development` for local development and `NODE_ENV=production` for a deployed bot. The non-standard value `dev` is not recommended; use `development`.
 
