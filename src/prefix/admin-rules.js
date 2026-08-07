@@ -11,7 +11,7 @@ const RULES_COLOR = 0x5865f2;
 function canViewAdminRules(interaction) {
   const adminRoleId = interaction.client.appEnv.adminRoleId;
   return (
-    interaction.user.id === interaction.client.appEnv.ownerId ||
+    interaction.client.appEnv.owners?.has(interaction.user.id) === true ||
     interaction.member?.roles?.cache?.has(adminRoleId) === true ||
     interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator) === true
   );
@@ -185,7 +185,7 @@ module.exports = {
       async execute(interaction) {
         if (!canViewAdminRules(interaction)) {
           return interaction.reply({
-            content: "Only the bot owner, configured Admin role, or a server administrator can view these rules.",
+            content: "Only a bot owner, configured Admin role, or a server administrator can view these rules.",
             flags: 64,
           });
         }

@@ -75,8 +75,7 @@ function getCommandUsage(command, prefix) {
 }
 
 function isBotOwner(message) {
-  const ownerId = message.client.appEnv?.ownerId;
-  return Boolean(ownerId && message.author.id === ownerId);
+  return message.client.appEnv?.owners?.has(message.author.id) === true;
 }
 
 async function checkGuildOnly(message, command) {

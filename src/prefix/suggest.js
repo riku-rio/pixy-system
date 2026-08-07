@@ -8,6 +8,18 @@ const {
   PermissionsBitField,
 } = require("discord.js");
 
+async function sendToOwners(client, embed) {
+  const ownerIds = [...(client.appEnv?.owners || [])];
+  const deliveries = await Promise.allSettled(
+    ownerIds.map(async (ownerId) => {
+      const owner = await client.users.fetch(ownerId);
+      await owner.send({ embeds: [embed] });
+    })
+  );
+
+  return deliveries.some((delivery) => delivery.status === "fulfilled");
+}
+
 module.exports = {
   name: "suggest",
   aliases: ["suggestion", "feedback"],
@@ -141,20 +153,18 @@ module.exports = {
           .setFooter({ text: `User ID: ${interaction.user.id}` })
           .setTimestamp();
 
-        try {
-          const owner = await interaction.client.users.fetch(interaction.client.appEnv?.ownerId || interaction.client.application?.owner?.id);
-          if (owner) {
-            await owner.send({ embeds: [suggestionEmbed] });
-          }
-        } catch {
-          if (interaction.client.appEnv?.suggestionChannelId) {
-            try {
-              const channel = await interaction.client.channels.fetch(interaction.client.appEnv.suggestionChannelId);
-              if (channel) {
-                await channel.send({ embeds: [suggestionEmbed] });
-              }
-            } catch {}
-          }
+        const sentToOwner = await sendToOwners(interaction.client, suggestionEmbed);
+
+        if (!sentToOwner && interaction.client.appEnv?.suggestionChannelId) {
+          try {
+            const channel = await interaction.client.channels.fetch(
+              interaction.client.appEnv.suggestionChannelId
+            );
+
+            if (channel?.isTextBased()) {
+              await channel.send({ embeds: [suggestionEmbed] });
+            }
+          } catch {}
         }
       },
     },

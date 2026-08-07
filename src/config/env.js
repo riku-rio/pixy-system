@@ -22,6 +22,26 @@ function readSnowflake(name, options) {
   return value;
 }
 
+function readOwners() {
+  const values = readEnvironmentValue("OWNERS")
+    .split(",")
+    .map((ownerId) => ownerId.trim())
+    .filter(Boolean);
+  const owners = new Set(values);
+
+  if (owners.size === 0) {
+    throw new Error("OWNERS must contain at least one Discord ID.");
+  }
+
+  const invalidOwners = [...owners].filter((ownerId) => !SNOWFLAKE_PATTERN.test(ownerId));
+
+  if (invalidOwners.length > 0) {
+    throw new Error("OWNERS must contain only valid Discord IDs separated by commas.");
+  }
+
+  return owners;
+}
+
 function loadEnv() {
   dotenv.config({ quiet: true });
 
@@ -41,7 +61,7 @@ function loadEnv() {
   const token = readEnvironmentValue("DISCORD_TOKEN");
   const clientId = readSnowflake("DISCORD_CLIENT_ID");
   const guildId = readSnowflake("DISCORD_GUILD_ID");
-  const ownerId = readSnowflake("OWNER_ID");
+  const owners = readOwners();
   const adminRoleId = readSnowflake("ADMIN_ROLE_ID");
   const ticketCategoryId = readSnowflake("TICKET_CATEGORY_ID");
   const ticketLogChannelId = readSnowflake("TICKET_LOG_CHANNEL_ID");
@@ -56,7 +76,7 @@ function loadEnv() {
     clientId,
     guildId,
     prefix,
-    ownerId,
+    owners,
     adminRoleId,
     ticketCategoryId,
     ticketLogChannelId,

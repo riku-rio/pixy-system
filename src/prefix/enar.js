@@ -18,7 +18,7 @@ const TITLE_CHARACTER_LIMIT = 256;
 const FOOTER_CHARACTER_LIMIT = 2048;
 
 function isOwner(userId, client) {
-  return Boolean(client.appEnv?.ownerId && userId === client.appEnv.ownerId);
+  return client.appEnv?.owners?.has(userId) === true;
 }
 
 function buildAnnouncementEmbed({ title, body, footer }) {
