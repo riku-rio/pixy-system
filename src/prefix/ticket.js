@@ -26,7 +26,7 @@ const TICKET_CATEGORIES = [
 
 function config(client) {
   return {
-    ownerId: client.appEnv.ownerId,
+    owners: client.appEnv.owners,
     adminRoleId: client.appEnv.adminRoleId,
     ticketCategoryId: client.appEnv.ticketCategoryId,
     ticketLogChannelId: client.appEnv.ticketLogChannelId,
@@ -35,7 +35,7 @@ function config(client) {
 }
 
 function isOwner(message) {
-  return message.author.id === config(message.client).ownerId;
+  return config(message.client).owners?.has(message.author.id) === true;
 }
 
 function memberIsAdmin(member, client) {
@@ -274,7 +274,7 @@ module.exports = {
   guildOnly: true,
 
   async execute(message) {
-    if (!isOwner(message)) return message.reply("This command is restricted to the bot owner.");
+    if (!isOwner(message)) return message.reply("This command is restricted to the bot owners.");
     await ensureGuild(message.guild.id, message.client);
     await message.delete().catch(() => null);
 
