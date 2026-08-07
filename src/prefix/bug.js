@@ -16,15 +16,24 @@ function isAdmin(interaction) {
   );
 }
 
+async function sendToOwners(client, embed) {
+  const ownerIds = [...(client.appEnv?.owners || [])];
+  const deliveries = await Promise.allSettled(
+    ownerIds.map(async (ownerId) => {
+      const owner = await client.users.fetch(ownerId);
+      await owner.send({ embeds: [embed] });
+    })
+  );
+
+  return deliveries.some((delivery) => delivery.status === "fulfilled");
+}
+
 async function sendBugReport(interaction, embed) {
-  const ownerId = interaction.client.appEnv.ownerId;
   const fallbackChannelId = interaction.client.appEnv.bugFallbackChannelId;
 
-  try {
-    const owner = await interaction.client.users.fetch(ownerId);
-    await owner.send({ embeds: [embed] });
+  if (await sendToOwners(interaction.client, embed)) {
     return "dm";
-  } catch {}
+  }
 
   try {
     const fallbackChannel = await interaction.client.channels.fetch(fallbackChannelId);
@@ -35,7 +44,7 @@ async function sendBugReport(interaction, embed) {
     await fallbackChannel.send({ embeds: [embed], allowedMentions: { parse: [] } });
     return "channel";
   } catch {
-    throw new Error("The bug report could not be delivered to the owner or fallback channel.");
+    throw new Error("The bug report could not be delivered to the owners or fallback channel.");
   }
 }
 
@@ -197,8 +206,8 @@ module.exports = {
           const destination = await sendBugReport(interaction, reportEmbed);
           await interaction.editReply(
             destination === "dm"
-              ? "Bug report submitted and sent to the bot owner."
-              : "Bug report submitted to the fallback bug channel because the owner DM was unavailable."
+              ? "Bug report submitted and sent to the configured bot owners."
+              : "Bug report submitted to the fallback bug channel because all owner DMs were unavailable."
           );
         } catch (error) {
           await interaction.editReply(error.message || "The bug report could not be delivered.");
