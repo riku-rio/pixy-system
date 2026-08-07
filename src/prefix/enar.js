@@ -108,7 +108,7 @@ module.exports = {
 
     if (!isOwner(message.author.id, message.client)) {
       const warning = await message.channel
-        .send("Only a bot owner can use this command.")
+        .send("Only the bot owner can use this command.")
         .catch(() => null);
 
       if (warning) {
